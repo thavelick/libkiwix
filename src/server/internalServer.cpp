@@ -58,8 +58,6 @@ extern "C" {
 
 #include <zim/uuid.h>
 #include <zim/error.h>
-#include <zim/search.h>
-#include <zim/suggestion.h>
 #include <zim/entry.h>
 #include <zim/item.h>
 
@@ -80,6 +78,7 @@ extern "C" {
 
 #define MAX_SEARCH_LEN 140
 #define KIWIX_MIN_CONTENT_SIZE_TO_DEFLATE 100
+#define DEFAULT_CACHE_SIZE 2
 
 namespace kiwix {
 
@@ -105,6 +104,16 @@ unsigned parseIllustration(const std::string& s)
     return w;
   }
   return 0;
+}
+
+// Returns the value of env var `name` if found, otherwise returns defaultVal
+unsigned int getCacheLength(const char* name, unsigned int defaultVal) {
+  auto envString = std::getenv(name);
+  try {
+    return extractFromString<unsigned int>(envString);
+  } catch (...) {}
+
+  return defaultVal;
 }
 } // unnamed namespace
 
@@ -142,7 +151,9 @@ InternalServer::InternalServer(Library* library,
   m_indexTemplateString(indexTemplateString.empty() ? RESOURCE::templates::index_html : indexTemplateString),
   mp_daemon(nullptr),
   mp_library(library),
-  mp_nameMapper(nameMapper ? nameMapper : &defaultNameMapper)
+  mp_nameMapper(nameMapper ? nameMapper : &defaultNameMapper),
+  searcherCache(getCacheLength("SEARCHER_CACHE_SIZE", std::max((unsigned int) (mp_library->getBookCount(true, true)*0.1), 1U))),
+  searchCache(getCacheLength("SEARCH_CACHE_SIZE", DEFAULT_CACHE_SIZE))
 {}
 
 bool InternalServer::start() {
@@ -574,7 +585,7 @@ std::unique_ptr<Response> InternalServer::handle_search(const RequestContext& re
 
   std::shared_ptr<zim::Searcher> searcher;
   if (archive) {
-    searcher = std::make_shared<zim::Searcher>(*archive);
+    searcher = searcherCache.getOrPut(bookId, [=](){ return std::make_shared<zim::Searcher>(*archive);});
   } else {
     for (auto& bookId: mp_library->filter(kiwix::Filter().local(true).valid(true))) {
       auto currentArchive = mp_library->getArchiveById(bookId);
@@ -605,6 +616,7 @@ std::unique_ptr<Response> InternalServer::handle_search(const RequestContext& re
   }
 
   /* Get the results */
+  std::string queryString;
   try {
     zim::Query query;
     if (patternString.empty()) {
@@ -614,6 +626,7 @@ std::unique_ptr<Response> InternalServer::handle_search(const RequestContext& re
       }
 
       query.setQuery("");
+      queryString = "GEO:" + to_string(latitude) + to_string(longitude) + to_string(distance);
       query.setGeorange(latitude, longitude, distance);
     } else {
       // Execute Ft search
@@ -621,13 +634,16 @@ std::unique_ptr<Response> InternalServer::handle_search(const RequestContext& re
           cout << "Performing query `" << patternString << "'" << endl;
       }
 
-      std::string queryString = removeAccents(patternString);
+      queryString = "FT:" + removeAccents(patternString);
       query.setQuery(queryString);
     }
+    queryString = bookId + queryString;
 
-    zim::Search search = searcher->search(query);
-    SearchRenderer renderer(search.getResults(start, pageLength), mp_nameMapper, start,
-                            search.getEstimatedMatches());
+    std::shared_ptr<zim::Search> search;
+    search = searchCache.getOrPut(queryString, [=](){ return make_shared<zim::Search>(searcher->search(query));});
+
+    SearchRenderer renderer(search->getResults(start, pageLength), mp_nameMapper, start,
+                            search->getEstimatedMatches());
     renderer.setSearchPattern(patternString);
     renderer.setSearchContent(bookName);
     renderer.setProtocolPrefix(m_root + "/");
