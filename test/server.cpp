@@ -164,11 +164,6 @@ typedef std::vector<Resource> ResourceCollection;
 const ResourceCollection resources200Compressible{
   { WITH_ETAG, "/" },
 
-  { WITH_ETAG, "/skin/jquery-ui/jquery-ui.structure.min.css" },
-  { WITH_ETAG, "/skin/jquery-ui/jquery-ui.min.js" },
-  { WITH_ETAG, "/skin/jquery-ui/external/jquery/jquery.js" },
-  { WITH_ETAG, "/skin/jquery-ui/jquery-ui.theme.min.css" },
-  { WITH_ETAG, "/skin/jquery-ui/jquery-ui.min.css" },
   { WITH_ETAG, "/skin/taskbar.js" },
   { WITH_ETAG, "/skin/taskbar.css" },
   { WITH_ETAG, "/skin/block_external.js" },
@@ -188,7 +183,6 @@ const ResourceCollection resources200Compressible{
 };
 
 const ResourceCollection resources200Uncompressible{
-  { WITH_ETAG, "/skin/jquery-ui/images/animated-overlay.gif" },
   { WITH_ETAG, "/skin/caret.png" },
 
   { WITH_ETAG, "/meta?content=zimfile&name=title" },
