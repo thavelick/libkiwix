@@ -108,8 +108,11 @@ unsigned parseIllustration(const std::string& s)
 
 // Returns the value of env var `name` if found, otherwise returns defaultVal
 unsigned int getCacheLength(const char* name, unsigned int defaultVal) {
-  auto envString = std::getenv(name);
   try {
+    const char* envString = std::getenv(name);
+    if (envString == nullptr) {
+      throw std::runtime_error("Environment variable not set");
+    }
     return extractFromString<unsigned int>(envString);
   } catch (...) {}
 
@@ -567,11 +570,11 @@ std::unique_ptr<Response> InternalServer::handle_search(const RequestContext& re
   } catch(const std::out_of_range&) {}
     catch(const std::invalid_argument&) {}
 
-  std::string bookName;
+  std::string bookName, bookId;
   std::shared_ptr<zim::Archive> archive;
   try {
     bookName = request.get_argument("content");
-    const std::string bookId = mp_nameMapper->getIdForName(bookName);
+    bookId = mp_nameMapper->getIdForName(bookName);
     archive = mp_library->getArchiveById(bookId);
   } catch (const std::out_of_range&) {}
 
