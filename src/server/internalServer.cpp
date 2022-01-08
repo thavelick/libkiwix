@@ -460,11 +460,11 @@ std::unique_ptr<Response> InternalServer::handle_suggest(const RequestContext& r
     printf("** running handle_suggest\n");
   }
 
-  std::string bookName;
+  std::string bookName, bookId;
   std::shared_ptr<zim::Archive> archive;
   try {
     bookName = request.get_argument("content");
-    const std::string bookId = mp_nameMapper->getIdForName(bookName);
+    bookId = mp_nameMapper->getIdForName(bookName);
     archive = mp_library->getArchiveById(bookId);
   } catch (const std::out_of_range&) {
     // error handled by the archive == nullptr check below
