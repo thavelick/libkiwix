@@ -401,13 +401,49 @@ struct I18nStringTable {
 
 #define ARRAY_ELEMENT_COUNT(a) (sizeof(a)/sizeof(a[0]))
 
-const I18nStringTable enStringTable{"en", ARRAY_ELEMENT_COUNT(enStrings), enStrings};
+const I18nStringTable i18nStringTables[] = {
+  { "en", ARRAY_ELEMENT_COUNT(enStrings), enStrings }
+};
+
+class I18nStringDB
+{
+public: // functions
+  I18nStringDB() {
+    for ( size_t i = 0; i < ARRAY_ELEMENT_COUNT(i18nStringTables); ++i ) {
+      const auto& t = i18nStringTables[i];
+      lang2TableMap[t.lang] = &t;
+    }
+  };
+
+  std::string get(const std::string& lang, const std::string& key) const {
+    return getStringsFor(lang)->get(key);
+  }
+
+private: // functions
+  const I18nStringTable* getStringsFor(const std::string& lang) const {
+    try {
+      return lang2TableMap.at(lang);
+    } catch(const std::out_of_range&) {
+      return lang2TableMap.at("en");
+    }
+  }
+
+private: // data
+  std::map<std::string, const I18nStringTable*> lang2TableMap;
+};
+
+std::string getTranslatedString(const std::string& lang, const std::string& key)
+{
+  static const I18nStringDB stringDb;
+
+  return stringDb.get(lang, key);
+}
 
 std::string makeFulltextSearchSuggestion(const std::string& queryString)
 {
   MustacheData data;
   data.set("SEARCH_TERMS", queryString);
-  const std::string tmpl = enStringTable.get("suggest-full-text-search");
+  const std::string tmpl = getTranslatedString("en", "suggest-full-text-search");
   return render_template(tmpl, data);
 }
 
