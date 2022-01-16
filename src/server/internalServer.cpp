@@ -55,6 +55,7 @@ extern "C" {
 #include "searcher.h"
 #include "search_renderer.h"
 #include "opds_dumper.h"
+#include "i18n.h"
 
 #include <zim/uuid.h>
 #include <zim/error.h>
@@ -372,72 +373,6 @@ SuggestionsList_t getSuggestions(const zim::Archive* const archive,
 
 namespace
 {
-
-struct I18nString {
-  const char* const key;
-  const char* const value;
-};
-
-const I18nString enStrings[] = {
-  // must be sorted by key
-  { "suggest-full-text-search", "containing '{{{SEARCH_TERMS}}}'..."}
-};
-
-struct I18nStringTable {
-  const char* const lang;
-  const size_t entryCount;
-  const I18nString* const entries;
-
-  const char* get(const std::string& key) const {
-    const I18nString* const begin = entries;
-    const I18nString* const end = begin + entryCount;
-    const I18nString* found = std::lower_bound(begin, end, key,
-        [](const I18nString& a, const std::string& k) {
-          return a.key < k;
-    });
-    return found == end ? nullptr : found->value;
-  }
-};
-
-#define ARRAY_ELEMENT_COUNT(a) (sizeof(a)/sizeof(a[0]))
-
-const I18nStringTable i18nStringTables[] = {
-  { "en", ARRAY_ELEMENT_COUNT(enStrings), enStrings }
-};
-
-class I18nStringDB
-{
-public: // functions
-  I18nStringDB() {
-    for ( size_t i = 0; i < ARRAY_ELEMENT_COUNT(i18nStringTables); ++i ) {
-      const auto& t = i18nStringTables[i];
-      lang2TableMap[t.lang] = &t;
-    }
-  };
-
-  std::string get(const std::string& lang, const std::string& key) const {
-    return getStringsFor(lang)->get(key);
-  }
-
-private: // functions
-  const I18nStringTable* getStringsFor(const std::string& lang) const {
-    try {
-      return lang2TableMap.at(lang);
-    } catch(const std::out_of_range&) {
-      return lang2TableMap.at("en");
-    }
-  }
-
-private: // data
-  std::map<std::string, const I18nStringTable*> lang2TableMap;
-};
-
-std::string getTranslatedString(const std::string& lang, const std::string& key)
-{
-  static const I18nStringDB stringDb;
-
-  return stringDb.get(lang, key);
-}
 
 std::string makeFulltextSearchSuggestion(const std::string& queryString)
 {
