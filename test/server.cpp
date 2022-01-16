@@ -682,6 +682,18 @@ TEST_F(ServerTest, suggestions)
       "    "                                                               "\n"
       "  }"                                                                "\n"
       "]"                                                                  "\n"
+    },
+    { // Test handling of & (%26 when url-encoded) in the search string
+      /* url: */ "/ROOT/suggest?content=zimfile&term=A%26B",
+      /* expected response: */
+      "["                                                                  "\n"
+      "  {"                                                                "\n"
+      "    \"value\" : \"A&amp;B \","                                      "\n"
+      "    \"label\" : \"containing &apos;A&amp;B&apos;...\","             "\n"
+      "    \"kind\" : \"pattern\""                                         "\n"
+      "    "                                                               "\n"
+      "  }"                                                                "\n"
+      "]"                                                                  "\n"
     }
   };
 
