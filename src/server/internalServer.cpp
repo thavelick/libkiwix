@@ -370,6 +370,15 @@ SuggestionsList_t getSuggestions(const zim::Archive* const archive,
   return suggestions;
 }
 
+namespace
+{
+
+std::string makeFulltextSearchSuggestion(const std::string& queryString)
+{
+  return "containing '" + queryString + "'...";
+}
+
+} // unnamed namespace
 
 std::unique_ptr<Response> InternalServer::handle_suggest(const RequestContext& request)
 {
@@ -429,7 +438,7 @@ std::unique_ptr<Response> InternalServer::handle_suggest(const RequestContext& r
   /* Propose the fulltext search if possible */
   if (archive->hasFulltextIndex()) {
     MustacheData result;
-    result.set("label", "containing '" + queryString + "'...");
+    result.set("label", makeFulltextSearchSuggestion(queryString));
     result.set("value", queryString + " ");
     result.set("kind", "pattern");
     result.set("first", first);
