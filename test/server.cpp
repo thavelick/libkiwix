@@ -694,7 +694,18 @@ TEST_F(ServerTest, suggestions)
       "    "                                                               "\n"
       "  }"                                                                "\n"
       "]"                                                                  "\n"
-    }
+    },
+    { /* url: */ "/ROOT/suggest?content=zimfile&term=abracadabra&userlang=hy",
+      /* expected response: */
+      "["                                                                  "\n"
+      "  {"                                                                "\n"
+      "    \"value\" : \"abracadabra \","                                  "\n"
+      "    \"label\" : \"որոնել &apos;abracadabra&apos;...\","             "\n"
+      "    \"kind\" : \"pattern\""                                         "\n"
+      "    "                                                               "\n"
+      "  }"                                                                "\n"
+      "]"                                                                  "\n"
+    },
   };
 
   for ( const auto& urlAndExpectedResponse : testData ) {
