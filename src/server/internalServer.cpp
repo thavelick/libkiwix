@@ -373,14 +373,41 @@ SuggestionsList_t getSuggestions(const zim::Archive* const archive,
 namespace
 {
 
+struct I18nString {
+  const char* const key;
+  const char* const value;
+};
+
+const I18nString enStrings[] = {
+  // must be sorted by key
+  { "suggest-full-text-search", "containing '{{{SEARCH_TERMS}}}'..."}
+};
+
+struct I18nStringTable {
+  const char* const lang;
+  const size_t entryCount;
+  const I18nString* const entries;
+
+  const char* get(const std::string& key) const {
+    const I18nString* const begin = entries;
+    const I18nString* const end = begin + entryCount;
+    const I18nString* found = std::lower_bound(begin, end, key,
+        [](const I18nString& a, const std::string& k) {
+          return a.key < k;
+    });
+    return found == end ? nullptr : found->value;
+  }
+};
+
+#define ARRAY_ELEMENT_COUNT(a) (sizeof(a)/sizeof(a[0]))
+
+const I18nStringTable enStringTable{"en", ARRAY_ELEMENT_COUNT(enStrings), enStrings};
+
 std::string makeFulltextSearchSuggestion(const std::string& queryString)
 {
   MustacheData data;
   data.set("SEARCH_TERMS", queryString);
-  // NOTE: Search terms are **not** HTML-escaped at this point.
-  // NOTE: HTML-escaping is performed when the result of this function
-  // NOTE: is expanded into the suggestions.json template
-  const std::string tmpl("containing '{{{SEARCH_TERMS}}}'...");
+  const std::string tmpl = enStringTable.get("suggest-full-text-search");
   return render_template(tmpl, data);
 }
 
