@@ -444,7 +444,7 @@ TEST_F(ServerTest, ETagOfUncompressibleContentIsNotAffectedByAcceptEncoding)
 // NOTE: The "Date" header (which should belong to that list as required
 // NOTE: by RFC 7232) is not included (since the result of this function
 // NOTE: will be used to check the equality of headers from the 200 and 304
-// NOTe: responses).
+// NOTE: responses).
 Headers special304Headers(const httplib::Response& r)
 {
   Headers result;
@@ -622,6 +622,75 @@ TEST_F(ServerTest, RangeHeaderIsCaseInsensitive)
     EXPECT_EQ(206, r->status);
     EXPECT_EQ("bytes 100-200/20077", r->get_header_value("Content-Range"));
     EXPECT_EQ(r0->body, r->body);
+  }
+}
+
+TEST_F(ServerTest, suggestions)
+{
+  typedef std::pair<std::string, std::string> UrlAndExpectedResponse;
+  // Not using raw strings for expected responses in order to make the
+  // whitespace visible and avoid the headache with editors
+  // removing whitespace on the end-of-line
+  const std::vector<UrlAndExpectedResponse> testData{
+    { /* url: */ "/ROOT/suggest?content=zimfile&term=thing",
+      /* expected response: */
+      "["                                                                  "\n"
+      "  {"                                                                "\n"
+      "    \"value\" : \"Doing His Thing\","                               "\n"
+      "    \"label\" : \"Doing His &lt;b&gt;Thing&lt;/b&gt;\","            "\n"
+      "    \"kind\" : \"path\""                                            "\n"
+      "      , \"path\" : \"A/Doing_His_Thing\""                           "\n"
+      "  },"                                                               "\n"
+      "  {"                                                                "\n"
+      "    \"value\" : \"We Didn&apos;t See a Thing\","                    "\n"
+      "    \"label\" : \"We Didn&apos;t See a &lt;b&gt;Thing&lt;/b&gt;\"," "\n"
+      "    \"kind\" : \"path\""                                            "\n"
+      "      , \"path\" : \"A/We_Didn&apos;t_See_a_Thing\""                "\n"
+      "  },"                                                               "\n"
+      "  {"                                                                "\n"
+      "    \"value\" : \"thing \","                                        "\n"
+      "    \"label\" : \"containing &apos;thing&apos;...\","               "\n"
+      "    \"kind\" : \"pattern\""                                         "\n"
+      "    "                                                               "\n"
+      "  }"                                                                "\n"
+      "]"                                                                  "\n"
+    },
+    { /* url: */ "/ROOT/suggest?content=zimfile&term=movie",
+      /* expected response: */
+      "["                                                                  "\n"
+      "  {"                                                                "\n"
+      "    \"value\" : \"Ray (movie)\","                                   "\n"
+      "    \"label\" : \"Ray (&lt;b&gt;movie&lt;/b&gt;)\","                "\n"
+      "    \"kind\" : \"path\""                                            "\n"
+      "      , \"path\" : \"A/Ray_(movie)\""                               "\n"
+      "  },"                                                               "\n"
+      "  {"                                                                "\n"
+      "    \"value\" : \"movie \","                                        "\n"
+      "    \"label\" : \"containing &apos;movie&apos;...\","               "\n"
+      "    \"kind\" : \"pattern\""                                         "\n"
+      "    "                                                               "\n"
+      "  }"                                                                "\n"
+      "]"                                                                  "\n"
+    },
+    { /* url: */ "/ROOT/suggest?content=zimfile&term=abracadabra",
+      /* expected response: */
+      "["                                                                  "\n"
+      "  {"                                                                "\n"
+      "    \"value\" : \"abracadabra \","                                  "\n"
+      "    \"label\" : \"containing &apos;abracadabra&apos;...\","         "\n"
+      "    \"kind\" : \"pattern\""                                         "\n"
+      "    "                                                               "\n"
+      "  }"                                                                "\n"
+      "]"                                                                  "\n"
+    }
+  };
+
+  for ( const auto& urlAndExpectedResponse : testData ) {
+    const std::string url = urlAndExpectedResponse.first;
+    const TestContext ctx{ {"url", url} };
+    const auto r = zfs1_->GET(url.c_str());
+    EXPECT_EQ(r->status, 200) << ctx;
+    EXPECT_EQ(r->body, urlAndExpectedResponse.second) << ctx;
   }
 }
 
