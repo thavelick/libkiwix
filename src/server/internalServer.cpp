@@ -376,10 +376,11 @@ namespace
 
 std::string makeFulltextSearchSuggestion(const std::string& lang, const std::string& queryString)
 {
-  MustacheData data;
-  data.set("SEARCH_TERMS", queryString);
-  const std::string tmpl = getTranslatedString(lang, "suggest-full-text-search");
-  return render_template(tmpl, data);
+  return i18n::expandParameterizedString(lang, "suggest-full-text-search",
+               {
+                  {"SEARCH_TERMS", queryString}
+               }
+         );
 }
 
 } // unnamed namespace
