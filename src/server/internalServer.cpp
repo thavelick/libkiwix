@@ -383,6 +383,15 @@ std::string makeFulltextSearchSuggestion(const std::string& lang, const std::str
          );
 }
 
+std::string getNoSuchBookErrorText(const std::string& lang, const std::string& bookName)
+{
+  return i18n::expandParameterizedString(lang, "no-such-book",
+               {
+                  {"BOOK_NAME", bookName}
+               }
+         );
+}
+
 } // unnamed namespace
 
 std::unique_ptr<Response> InternalServer::handle_suggest(const RequestContext& request)
@@ -608,7 +617,8 @@ std::unique_ptr<Response> InternalServer::handle_random(const RequestContext& re
   }
 
   if (archive == nullptr) {
-    const std::string error_details = "No such book: " + bookName;
+    const std::string userlang = request.get_user_language();
+    const std::string error_details = getNoSuchBookErrorText(userlang, bookName);
     return Response::build_404(*this, "", bookName, "", error_details);
   }
 

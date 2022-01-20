@@ -5,4 +5,5 @@
 	},
 	"name":"Հայերեն",
 	"suggest-full-text-search": "որոնել '{{{SEARCH_TERMS}}}'..."
+	, "no-such-book": "Գիրքը բացակայում է՝ {{BOOK_NAME}}"
 }
