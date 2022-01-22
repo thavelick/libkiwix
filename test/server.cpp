@@ -398,9 +398,6 @@ TEST_F(ServerTest, 404WithBodyTesting)
     <p>
       The requested URL "/ROOT/catalog/" was not found on this server.
     </p>
-    <p>
-      //EOLWHITESPACEMARKER
-    </p>
 )"  },
 
     { /* url */ "/ROOT/catalog/invalid_endpoint",
@@ -408,9 +405,6 @@ TEST_F(ServerTest, 404WithBodyTesting)
     <h1>Not Found</h1>
     <p>
       The requested URL "/ROOT/catalog/invalid_endpoint" was not found on this server.
-    </p>
-    <p>
-      //EOLWHITESPACEMARKER
     </p>
 )"  },
 

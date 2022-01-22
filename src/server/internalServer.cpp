@@ -374,6 +374,24 @@ SuggestionsList_t getSuggestions(const zim::Archive* const archive,
 namespace
 {
 
+class UrlNotFoundMsg {};
+
+const UrlNotFoundMsg urlNotFoundMsg;
+
+ContentResponseBlueprint&& operator+(ContentResponseBlueprint&& crb,
+                                     UrlNotFoundMsg /*unused*/)
+{
+  const std::string requestUrl = crb.m_request.get_full_url();
+  const auto urlNotFoundMsgText = i18n::expandParameterizedString(
+      crb.m_request.get_user_language(),
+      "url-not-found",
+      {{"url", requestUrl}}
+  );
+  crb.m_data["details"].push_back({"p", urlNotFoundMsgText});
+  return std::move(crb);
+}
+
+
 std::string makeFulltextSearchSuggestion(const std::string& lang, const std::string& queryString)
 {
   return i18n::expandParameterizedString(lang, "suggest-full-text-search",
@@ -659,7 +677,7 @@ std::unique_ptr<Response> InternalServer::handle_catalog(const RequestContext& r
     url  = request.get_url_part(1);
   } catch (const std::out_of_range&) {
     return make404Response(*this, request)
-           + make404ResponseData(request.get_full_url());
+           + urlNotFoundMsg;
   }
 
   if (url == "v2") {
@@ -667,7 +685,8 @@ std::unique_ptr<Response> InternalServer::handle_catalog(const RequestContext& r
   }
 
   if (url != "searchdescription.xml" && url != "root.xml" && url != "search") {
-    return Response::build_404(*this, request.get_full_url());
+    return make404Response(*this, request)
+           + urlNotFoundMsg;
   }
 
   if (url == "searchdescription.xml") {
