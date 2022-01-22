@@ -371,7 +371,6 @@ TEST_F(ServerTest, 404WithBodyTesting)
     { /* url */ "/ROOT/random?content=non-existent-book",
       /* expected body */ R"(
     <h1>Not Found</h1>
-    //EOLWHITESPACEMARKER
     <p>
       No such book: non-existent-book
     </p>
@@ -380,7 +379,6 @@ TEST_F(ServerTest, 404WithBodyTesting)
     { /* url */ "/ROOT/random?content=non-existent-book&userlang=hy",
       /* expected body */ R"(
     <h1>Not Found</h1>
-    //EOLWHITESPACEMARKER
     <p>
       Գիրքը բացակայում է՝ non-existent-book
     </p>
@@ -389,7 +387,6 @@ TEST_F(ServerTest, 404WithBodyTesting)
     { /* url */ "/ROOT/suggest?content=no-such-book&term=whatever",
       /* expected body */ R"(
     <h1>Not Found</h1>
-    //EOLWHITESPACEMARKER
     <p>
       No such book: no-such-book
     </p>

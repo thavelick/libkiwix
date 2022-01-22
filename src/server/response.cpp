@@ -21,6 +21,7 @@
 #include "request_context.h"
 #include "internalServer.h"
 #include "kiwixlib-resources.h"
+#include "i18n.h"
 
 #include "tools/regexTools.h"
 #include "tools/stringTools.h"
@@ -86,13 +87,18 @@ std::unique_ptr<Response> Response::build_304(const InternalServer& server, cons
 
 std::unique_ptr<ContentResponse> Response::build_404(const InternalServer& server, const std::string& url, const std::string& details)
 {
-  MustacheData data;
+  kainjow::mustache::list pList;
   if ( !url.empty() ) {
-    data.set("url", url);
+    const auto urlNotFoundMsg = i18n::expandParameterizedString(
+        "en", // FIXME: fixed language
+        "url-not-found",
+        {{"url", url}}
+    );
+    pList.push_back({"p", urlNotFoundMsg});
   }
-  data.set("details", details);
+  pList.push_back({"p", details});
 
-  return build_404(server, data);
+  return build_404(server, {"details", pList});
 }
 
 std::unique_ptr<ContentResponse> Response::build_404(const InternalServer& server, const kainjow::mustache::data& data)
