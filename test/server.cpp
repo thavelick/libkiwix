@@ -400,11 +400,27 @@ TEST_F(ServerTest, 404WithBodyTesting)
     </p>
 )"  },
 
+    { /* url */ "/ROOT/catalog/?userlang=hy",
+      /* expected body */ R"(
+    <h1>Not Found</h1>
+    <p>
+      Սխալ հասցե՝ /ROOT/catalog/
+    </p>
+)"  },
+
     { /* url */ "/ROOT/catalog/invalid_endpoint",
       /* expected body */ R"(
     <h1>Not Found</h1>
     <p>
       The requested URL "/ROOT/catalog/invalid_endpoint" was not found on this server.
+    </p>
+)"  },
+
+    { /* url */ "/ROOT/catalog/invalid_endpoint?userlang=hy",
+      /* expected body */ R"(
+    <h1>Not Found</h1>
+    <p>
+      Սխալ հասցե՝ /ROOT/catalog/invalid_endpoint
     </p>
 )"  },
 
