@@ -392,6 +392,17 @@ TEST_F(ServerTest, 404WithBodyTesting)
     </p>
 )"  },
 
+    { /* url */ "/ROOT/catalog/",
+      /* expected body */ R"(
+    <h1>Not Found</h1>
+    <p>
+      The requested URL "/ROOT/catalog/" was not found on this server.
+    </p>
+    <p>
+      //EOLWHITESPACEMARKER
+    </p>
+)"  },
+
     { /* url */ "/ROOT/catalog/invalid_endpoint",
       /* expected body */ R"(
     <h1>Not Found</h1>
