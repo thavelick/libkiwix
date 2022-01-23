@@ -390,6 +390,11 @@ ParameterizedMessage noSuchBookErrorMsg(const std::string& bookName)
   return ParameterizedMessage("no-such-book", { {"BOOK_NAME", bookName} });
 }
 
+ParameterizedMessage invalidRawAccessMsg(const std::string& dt)
+{
+  return ParameterizedMessage("invalid-raw-data-type", { {"DATATYPE", dt} });
+}
+
 ParameterizedMessage nonParameterizedMessage(const std::string& msgId)
 {
   return ParameterizedMessage(msgId, {});
@@ -866,8 +871,9 @@ std::unique_ptr<Response> InternalServer::handle_raw(const RequestContext& reque
   }
 
   if (kind != "meta" && kind!= "content") {
-    const std::string error_details = kind + " is not a valid request for raw content.";
-    return Response::build_404(*this, request.get_full_url(), error_details);
+    return HTTP404HtmlResponse(*this, request)
+           + urlNotFoundMsg
+           + invalidRawAccessMsg(kind);
   }
 
   std::shared_ptr<zim::Archive> archive;
