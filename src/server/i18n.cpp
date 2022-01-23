@@ -56,10 +56,18 @@ public: // functions
       const auto& t = kiwix::i18n::stringTables[i];
       lang2TableMap[t.lang] = &t;
     }
+		enStrings = lang2TableMap.at("en");
   };
 
   std::string get(const std::string& lang, const std::string& key) const {
-    return getStringsFor(lang)->get(key);
+    const char* s = getStringsFor(lang)->get(key);
+    if ( s == nullptr ) {
+      s = enStrings->get(key);
+      if ( s == nullptr ) {
+        throw std::runtime_error("Invalid message id");
+      }
+    }
+    return s;
   }
 
 private: // functions
@@ -67,12 +75,13 @@ private: // functions
     try {
       return lang2TableMap.at(lang);
     } catch(const std::out_of_range&) {
-      return lang2TableMap.at("en");
+      return enStrings;
     }
   }
 
 private: // data
   std::map<std::string, const I18nStringTable*> lang2TableMap;
+	const I18nStringTable* enStrings;
 };
 
 } // unnamed namespace
