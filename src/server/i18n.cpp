@@ -35,7 +35,7 @@ const char* I18nStringTable::get(const std::string& key) const
       [](const I18nString& a, const std::string& k) {
         return a.key < k;
   });
-  return found == end ? nullptr : found->value;
+  return (found == end || found->key != key) ? nullptr : found->value;
 }
 
 namespace i18n
