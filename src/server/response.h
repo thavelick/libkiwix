@@ -147,12 +147,6 @@ public: // functions
 
   virtual ~ContentResponseBlueprint() = default;
 
-  ContentResponseBlueprint& operator+(kainjow::mustache::data&& data)
-  {
-    this->m_data = std::move(data);
-    return *this;
-  }
-
   operator std::unique_ptr<ContentResponse>() const
   {
     return generateResponseObject();
