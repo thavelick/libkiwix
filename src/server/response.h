@@ -28,6 +28,7 @@
 #include "byte_range.h"
 #include "entry.h"
 #include "etag.h"
+#include "i18n.h"
 
 extern "C" {
 #include "microhttpd_wrapper.h"
@@ -185,6 +186,7 @@ struct HTTP404HtmlResponse : ContentResponseBlueprint
                       const RequestContext& request);
 
   HTTP404HtmlResponse& operator+(UrlNotFoundMsg /*unused*/);
+  HTTP404HtmlResponse& operator+(const ParameterizedMessage& errorDetails);
 };
 
 class ItemResponse : public Response {

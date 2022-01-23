@@ -97,4 +97,9 @@ std::string expandParameterizedString(const std::string& lang,
 
 } // namespace i18n
 
+std::string ParameterizedMessage::getText(const std::string& lang) const
+{
+  return i18n::expandParameterizedString(lang, msgId, params);
+}
+
 } // namespace kiwix
