@@ -332,6 +332,14 @@ public:
   {}
 
   TestContentIn404HtmlResponse(const std::string& url,
+                               const std::string& expectedPageTitle,
+                               const std::string& expectedBody)
+    : url(url)
+    , expectedPageTitle(expectedPageTitle)
+    , expectedBody(expectedBody)
+  {}
+
+  TestContentIn404HtmlResponse(const std::string& url,
                                const std::string& bookName,
                                const std::string& bookTitle,
                                const std::string& expectedBody)
@@ -341,11 +349,12 @@ public:
     , expectedBody(expectedBody)
   {}
 
-  const std::string url, bookName, bookTitle, expectedBody;
+  const std::string url, expectedPageTitle, bookName, bookTitle, expectedBody;
 
   std::string expectedResponse() const;
 
 private:
+  std::string pageTitle() const;
   std::string hiddenBookNameInput() const;
   std::string searchPatternInput() const;
   std::string taskbarLinks() const;
@@ -358,7 +367,9 @@ std::string TestContentIn404HtmlResponse::expectedResponse() const
 <html>
   <head>
     <meta content="text/html;charset=UTF-8" http-equiv="content-type" />
-    <title>Content not found</title>
+    <title>)FRAG",
+
+    R"FRAG(</title>
   <link type="root" href="/ROOT"><link type="text/css" href="/ROOT/skin/jquery-ui/jquery-ui.min.css" rel="Stylesheet" />
 <link type="text/css" href="/ROOT/skin/jquery-ui/jquery-ui.theme.min.css" rel="Stylesheet" />
 <link type="text/css" href="/ROOT/skin/taskbar.css" rel="Stylesheet" />
@@ -398,14 +409,23 @@ std::string TestContentIn404HtmlResponse::expectedResponse() const
   };
 
   return frag[0]
-       + hiddenBookNameInput()
+       + pageTitle()
        + frag[1]
-       + searchPatternInput()
+       + hiddenBookNameInput()
        + frag[2]
-       + taskbarLinks()
+       + searchPatternInput()
        + frag[3]
+       + taskbarLinks()
+       + frag[4]
        + expectedBody
-       + frag[4];
+       + frag[5];
+}
+
+std::string TestContentIn404HtmlResponse::pageTitle() const
+{
+  return expectedPageTitle.empty()
+       ? "Content not found"
+       : expectedPageTitle;
 }
 
 std::string TestContentIn404HtmlResponse::hiddenBookNameInput() const
@@ -457,6 +477,7 @@ TEST_F(ServerTest, 404WithBodyTesting)
 )"  },
 
     { /* url */ "/ROOT/random?content=non-existent-book&userlang=hy",
+      /* expected page title */ "Սխալ հասցե",
       /* expected body */ R"(
     <h1>Սխալ հասցե</h1>
     <p>
@@ -481,6 +502,7 @@ TEST_F(ServerTest, 404WithBodyTesting)
 )"  },
 
     { /* url */ "/ROOT/catalog/?userlang=hy",
+      /* expected page title */ "Սխալ հասցե",
       /* expected body */ R"(
     <h1>Սխալ հասցե</h1>
     <p>
@@ -497,6 +519,7 @@ TEST_F(ServerTest, 404WithBodyTesting)
 )"  },
 
     { /* url */ "/ROOT/catalog/invalid_endpoint?userlang=hy",
+      /* expected page title */ "Սխալ հասցե",
       /* expected body */ R"(
     <h1>Սխալ հասցե</h1>
     <p>
