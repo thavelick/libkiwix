@@ -138,6 +138,7 @@ HTTP404HtmlResponse& HTTP404HtmlResponse::operator+(const ParameterizedMessage& 
   m_data["details"].push_back({"p", msgText});
   return *this;
 }
+
 std::unique_ptr<Response> Response::build_416(const InternalServer& server, size_t resourceLength)
 {
   auto response = Response::build(server);
