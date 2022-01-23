@@ -388,11 +388,6 @@ ParameterizedMessage noSuchBookErrorMsg(const std::string& bookName)
   return ParameterizedMessage("no-such-book", { {"BOOK_NAME", bookName} });
 }
 
-std::string getNoSuchBookErrorText(const std::string& lang, const std::string& bookName)
-{
-  return noSuchBookErrorMsg(bookName).getText(lang);
-}
-
 } // unnamed namespace
 
 std::unique_ptr<Response> InternalServer::handle_suggest(const RequestContext& request)
@@ -616,10 +611,9 @@ std::unique_ptr<Response> InternalServer::handle_random(const RequestContext& re
   }
 
   if (archive == nullptr) {
-    const std::string userlang = request.get_user_language();
-    const std::string error_details = getNoSuchBookErrorText(userlang, bookName);
-    auto response = Response::build_404(*this, "", error_details);
-    return withTaskbarInfo(bookName, nullptr, std::move(response));
+    return HTTP404HtmlResponse(*this, request)
+           + noSuchBookErrorMsg(bookName)
+           + TaskbarInfo(bookName);
   }
 
   try {
