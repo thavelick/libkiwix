@@ -383,13 +383,14 @@ std::string makeFulltextSearchSuggestion(const std::string& lang, const std::str
          );
 }
 
+ParameterizedMessage noSuchBookErrorMsg(const std::string& bookName)
+{
+  return ParameterizedMessage("no-such-book", { {"BOOK_NAME", bookName} });
+}
+
 std::string getNoSuchBookErrorText(const std::string& lang, const std::string& bookName)
 {
-  return i18n::expandParameterizedString(lang, "no-such-book",
-               {
-                  {"BOOK_NAME", bookName}
-               }
-         );
+  return noSuchBookErrorMsg(bookName).getText(lang);
 }
 
 } // unnamed namespace
@@ -871,8 +872,9 @@ std::unique_ptr<Response> InternalServer::handle_raw(const RequestContext& reque
   } catch (const std::out_of_range& e) {}
 
   if (archive == nullptr) {
-    const std::string error_details = "No such book: " + bookName;
-    return Response::build_404(*this, request.get_full_url(), error_details);
+    return HTTP404HtmlResponse(*this, request)
+           + urlNotFoundMsg
+           + noSuchBookErrorMsg(bookName);
   }
 
   // Remove the beggining of the path:
