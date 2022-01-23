@@ -374,24 +374,6 @@ SuggestionsList_t getSuggestions(const zim::Archive* const archive,
 namespace
 {
 
-class UrlNotFoundMsg {};
-
-const UrlNotFoundMsg urlNotFoundMsg;
-
-ContentResponseBlueprint&& operator+(ContentResponseBlueprint&& crb,
-                                     UrlNotFoundMsg /*unused*/)
-{
-  const std::string requestUrl = crb.m_request.get_full_url();
-  const auto urlNotFoundMsgText = i18n::expandParameterizedString(
-      crb.m_request.get_user_language(),
-      "url-not-found",
-      {{"url", requestUrl}}
-  );
-  crb.m_data["details"].push_back({"p", urlNotFoundMsgText});
-  return std::move(crb);
-}
-
-
 std::string makeFulltextSearchSuggestion(const std::string& lang, const std::string& queryString)
 {
   return i18n::expandParameterizedString(lang, "suggest-full-text-search",

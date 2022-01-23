@@ -113,6 +113,8 @@ std::unique_ptr<ContentResponse> Response::build_404(const InternalServer& serve
   return response;
 }
 
+extern const UrlNotFoundMsg urlNotFoundMsg;
+
 HTTP404HtmlResponse::HTTP404HtmlResponse(const InternalServer& server,
                                          const RequestContext& request)
   : ContentResponseBlueprint(&server,
@@ -123,6 +125,18 @@ HTTP404HtmlResponse::HTTP404HtmlResponse(const InternalServer& server,
 {
   kainjow::mustache::list emptyList;
   this->m_data = kainjow::mustache::object{{"details", emptyList}};
+}
+
+HTTP404HtmlResponse& HTTP404HtmlResponse::operator+(UrlNotFoundMsg /*unused*/)
+{
+  const std::string requestUrl = m_request.get_full_url();
+  const auto urlNotFoundMsgText = i18n::expandParameterizedString(
+      m_request.get_user_language(),
+      "url-not-found",
+      {{"url", requestUrl}}
+  );
+  m_data["details"].push_back({"p", urlNotFoundMsgText});
+  return *this;
 }
 
 std::unique_ptr<Response> Response::build_416(const InternalServer& server, size_t resourceLength)
