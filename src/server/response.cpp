@@ -86,6 +86,11 @@ std::unique_ptr<Response> Response::build_304(const InternalServer& server, cons
 
 extern const UrlNotFoundMsg urlNotFoundMsg;
 
+std::string ContentResponseBlueprint::getMessage(const std::string& msgId) const
+{
+  return getTranslatedString(m_request.get_user_language(), msgId);
+}
+
 std::unique_ptr<ContentResponse> ContentResponseBlueprint::generateResponseObject() const
 {
   auto r = ContentResponse::build(m_server, m_template, m_data, m_mimeType);
@@ -103,8 +108,8 @@ HTTP404HtmlResponse::HTTP404HtmlResponse(const InternalServer& server,
 {
   kainjow::mustache::list emptyList;
   this->m_data = kainjow::mustache::object{
-                    {"PAGE_TITLE",   "Content not found"},
-                    {"PAGE_HEADING", "Not Found"},
+                    {"PAGE_TITLE",   getMessage("404-page-title")},
+                    {"PAGE_HEADING", getMessage("404-page-heading")},
                     {"details", emptyList}
   };
 }

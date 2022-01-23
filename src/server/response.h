@@ -158,6 +158,7 @@ public: // functions
   }
 
 protected: // functions
+  std::string getMessage(const std::string& msgId) const;
   virtual std::unique_ptr<ContentResponse> generateResponseObject() const;
 
 public: //data

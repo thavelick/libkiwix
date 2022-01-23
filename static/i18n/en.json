@@ -11,4 +11,6 @@
 	, "random-article-failure" :  "Oops! Failed to pick a random article :("
 	, "invalid-raw-data-type" : "{{DATATYPE}} is not a valid request for raw content."
 	, "raw-entry-not-found" : "Cannot find {{DATATYPE}} entry {{ENTRY}}"
+	, "404-page-title" : "Content not found"
+	, "404-page-heading" : "Not Found"
 }
