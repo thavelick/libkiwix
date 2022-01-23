@@ -263,8 +263,10 @@ MHD_Result InternalServer::handlerCallback(struct MHD_Connection* connection,
 std::unique_ptr<Response> InternalServer::handle_request(const RequestContext& request)
 {
   try {
-    if (! request.is_valid_url())
-      return Response::build_404(*this, request.get_full_url());
+    if (! request.is_valid_url()) {
+      return HTTP404HtmlResponse(*this, request)
+             + urlNotFoundMsg;
+    }
 
     const ETag etag = get_matching_if_none_match_etag(request);
     if ( etag )
@@ -479,7 +481,8 @@ std::unique_ptr<Response> InternalServer::handle_skin(const RequestContext& requ
     response->set_cacheable();
     return std::move(response);
   } catch (const ResourceNotFound& e) {
-    return Response::build_404(*this, request.get_full_url());
+    return HTTP404HtmlResponse(*this, request)
+           + urlNotFoundMsg;
   }
 }
 
@@ -633,8 +636,10 @@ std::unique_ptr<Response> InternalServer::handle_captured_external(const Request
     source = kiwix::urlDecode(request.get_argument("source"));
   } catch (const std::out_of_range& e) {}
 
-  if (source.empty())
-    return Response::build_404(*this, request.get_full_url());
+  if (source.empty()) {
+    return HTTP404HtmlResponse(*this, request)
+           + urlNotFoundMsg;
+  }
 
   auto data = get_default_data();
   data.set("source", source);
@@ -851,7 +856,8 @@ std::unique_ptr<Response> InternalServer::handle_raw(const RequestContext& reque
      bookName = request.get_url_part(1);
      kind = request.get_url_part(2);
   } catch (const std::out_of_range& e) {
-    return Response::build_404(*this, request.get_full_url());
+    return HTTP404HtmlResponse(*this, request)
+           + urlNotFoundMsg;
   }
 
   if (kind != "meta" && kind!= "content") {
