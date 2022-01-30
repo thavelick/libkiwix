@@ -662,8 +662,7 @@ TEST_F(ServerTest, 404WithBodyTesting)
       expected_body==R"(
     <h1>Not found</h1>
     <p>
-      There is no article with the title <b> ""</b>
-      and the fulltext search engine is not available for this content.
+      There is no article with the title <b>""</b> and the fulltext search engine is not available for this content.
     </p>
 )"  },
 
@@ -673,8 +672,7 @@ TEST_F(ServerTest, 404WithBodyTesting)
       expected_body==R"(
     <h1>Not found</h1>
     <p>
-      There is no article with the title <b> "asdfqwerty"</b>
-      and the fulltext search engine is not available for this content.
+      There is no article with the title <b>"asdfqwerty"</b> and the fulltext search engine is not available for this content.
     </p>
 )"  },
 
