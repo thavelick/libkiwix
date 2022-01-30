@@ -620,7 +620,8 @@ std::unique_ptr<Response> InternalServer::handle_search(const RequestContext& re
     renderer.setSearchProtocolPrefix(m_root + "/search?");
     renderer.setPageLength(pageLength);
     auto response = ContentResponse::build(*this, renderer.getHtml(), "text/html; charset=utf-8");
-    return withTaskbarInfo(bookName, archive.get(), std::move(response));
+    response->set_taskbar(bookName, archive.get());
+    return response;
   } catch (const std::exception& e) {
     std::cerr << e.what() << std::endl;
     return Response::build_500(*this, e.what());

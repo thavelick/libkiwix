@@ -95,9 +95,10 @@ std::unique_ptr<ContentResponse> ContentResponseBlueprint::generateResponseObjec
 {
   auto r = ContentResponse::build(m_server, m_template, m_data, m_mimeType);
   r->set_code(m_httpStatusCode);
-  return m_taskbarInfo
-       ? withTaskbarInfo(m_taskbarInfo->bookName, m_taskbarInfo->archive, std::move(r))
-       : std::move(r);
+  if ( m_taskbarInfo ) {
+    r->set_taskbar(m_taskbarInfo->bookName, m_taskbarInfo->archive);
+  }
+  return r;
 }
 
 HTTPErrorHtmlResponse::HTTPErrorHtmlResponse(const InternalServer& server,
