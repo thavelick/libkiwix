@@ -104,7 +104,8 @@ HTTPErrorHtmlResponse::HTTPErrorHtmlResponse(const InternalServer& server,
                                              const RequestContext& request,
                                              int httpStatusCode,
                                              const std::string& pageTitleMsgId,
-                                             const std::string& headingMsgId)
+                                             const std::string& headingMsgId,
+                                             const std::string& cssUrl)
   : ContentResponseBlueprint(&server,
                              &request,
                              MHD_HTTP_NOT_FOUND,
@@ -113,6 +114,7 @@ HTTPErrorHtmlResponse::HTTPErrorHtmlResponse(const InternalServer& server,
 {
   kainjow::mustache::list emptyList;
   this->m_data = kainjow::mustache::object{
+                    {"CSS_URL", onlyAsNonEmptyMustacheValue(cssUrl) },
                     {"PAGE_TITLE",   getMessage(pageTitleMsgId)},
                     {"PAGE_HEADING", getMessage(headingMsgId)},
                     {"details", emptyList}

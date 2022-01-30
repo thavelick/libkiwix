@@ -660,7 +660,7 @@ TEST_F(ServerTest, 404WithBodyTesting)
       book_name=="zimfile" &&
       book_title=="Ray Charles" &&
       expected_body==R"(
-    <h1>Not found</h1>
+    <h1>Not Found</h1>
     <p>
       There is no article with the title <b>""</b> and the fulltext search engine is not available for this content.
     </p>
@@ -670,7 +670,7 @@ TEST_F(ServerTest, 404WithBodyTesting)
       expected_page_title=="Fulltext search unavailable" &&
       expected_css_url=="/ROOT/skin/search_results.css" &&
       expected_body==R"(
-    <h1>Not found</h1>
+    <h1>Not Found</h1>
     <p>
       There is no article with the title <b>"asdfqwerty"</b> and the fulltext search engine is not available for this content.
     </p>

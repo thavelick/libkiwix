@@ -14,4 +14,6 @@
 	, "raw-entry-not-found" : "Entry requested via the /raw endpoint was not found"
 	, "404-page-title" : "Title of the 404 error page"
 	, "404-page-heading" : "Heading of the 404 error page"
+	, "no-search-results-page-title": "Title of the error page returned for a search on a non-existing book or for an empty pattern"
+	, "no-search-results": "Text of the error page returned for a search on a non-existing book or for an empty pattern"
 }

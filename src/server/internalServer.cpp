@@ -405,6 +405,15 @@ ParameterizedMessage rawEntryNotFoundMsg(const std::string& dt, const std::strin
   );
 }
 
+ParameterizedMessage noSearchResultsMsg(const std::string& pattern)
+{
+  return ParameterizedMessage("no-search-results",
+                              {
+                                {"SEARCH_PATTERN", encodeDiples(pattern)}
+                              }
+  );
+}
+
 ParameterizedMessage nonParameterizedMessage(const std::string& msgId)
 {
   return ParameterizedMessage(msgId, {});
@@ -541,12 +550,12 @@ std::unique_ptr<Response> InternalServer::handle_search(const RequestContext& re
   /* Make the search */
   if ( (!archive && !bookName.empty())
     || (patternString.empty() && ! has_geo_query) ) {
-    auto data = get_default_data();
-    data.set("pattern", encodeDiples(patternString));
-    data.set("root", m_root);
-    auto response = ContentResponse::build(*this, RESOURCE::templates::no_search_result_html, data, "text/html; charset=utf-8");
-    response->set_code(MHD_HTTP_NOT_FOUND);
-    return withTaskbarInfo(bookName, archive.get(), std::move(response));
+    return HTTPErrorHtmlResponse(*this, request, MHD_HTTP_NOT_FOUND,
+                                 "no-search-results-page-title",
+                                 "404-page-heading",
+                                 m_root + "/skin/search_results.css")
+         + noSearchResultsMsg(patternString)
+         + TaskbarInfo(bookName, archive.get());
   }
 
   std::shared_ptr<zim::Searcher> searcher;
