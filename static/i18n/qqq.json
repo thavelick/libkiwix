@@ -16,4 +16,5 @@
 	, "404-page-heading" : "Heading of the 404 error page"
 	, "no-search-results-page-title": "Title of the error page returned for a search on a non-existing book or for an empty pattern"
 	, "no-search-results": "Text of the error page returned for a search on a non-existing book or for an empty pattern"
+	, "library-button-text": "Tooltip of the button leading to the welcome page"
 }

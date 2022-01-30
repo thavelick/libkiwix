@@ -15,4 +15,5 @@
 	, "404-page-heading" : "Not Found"
 	, "no-search-results-page-title": "Fulltext search unavailable"
 	, "no-search-results": "There is no article with the title <b>\"{{{SEARCH_PATTERN}}}\"</b> and the fulltext search engine is not available for this content."
+	, "library-button-text": "Go to welcome page"
 }
