@@ -373,43 +373,16 @@ ExpectedResponseData operator&&(const ExpectedResponseData& a,
   };
 }
 
-class TestContentIn404HtmlResponse
+class TestContentIn404HtmlResponse : public ExpectedResponseData
 {
 public:
   TestContentIn404HtmlResponse(const std::string& url,
                                const ExpectedResponseData& erd)
-    : url(url)
-    , expectedPageTitle(erd.expectedPageTitle)
-    , bookName(erd.bookName)
-    , bookTitle(erd.bookTitle)
-    , expectedBody(erd.expectedBody)
+    : ExpectedResponseData(erd)
+    , url(url)
   {}
 
-  TestContentIn404HtmlResponse(const std::string& url,
-                               const std::string& expectedBody)
-    : url(url)
-    , expectedBody(expectedBody)
-  {}
-
-  TestContentIn404HtmlResponse(const std::string& url,
-                               const std::string& expectedPageTitle,
-                               const std::string& expectedBody)
-    : url(url)
-    , expectedPageTitle(expectedPageTitle)
-    , expectedBody(expectedBody)
-  {}
-
-  TestContentIn404HtmlResponse(const std::string& url,
-                               const std::string& bookName,
-                               const std::string& bookTitle,
-                               const std::string& expectedBody)
-    : url(url)
-    , bookName(bookName)
-    , bookTitle(bookTitle)
-    , expectedBody(expectedBody)
-  {}
-
-  const std::string url, expectedPageTitle, bookName, bookTitle, expectedBody;
+  const std::string url;
 
   std::string expectedResponse() const;
 
