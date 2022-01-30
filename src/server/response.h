@@ -126,6 +126,17 @@ class ContentResponse : public Response {
     std::string m_bookTitle;
  };
 
+struct TaskbarInfo
+{
+  const std::string bookName;
+  const zim::Archive* const archive;
+
+  TaskbarInfo(const std::string& bookName, const zim::Archive* a = nullptr)
+    : bookName(bookName)
+    , archive(a)
+  {}
+};
+
 std::unique_ptr<ContentResponse> withTaskbarInfo(const std::string& bookName,
                                                  const zim::Archive* archive,
                                                  std::unique_ptr<ContentResponse> r);
@@ -157,6 +168,9 @@ public: // functions
     return operator std::unique_ptr<ContentResponse>();
   }
 
+
+  ContentResponseBlueprint& operator+(const TaskbarInfo& taskbarInfo);
+
 protected: // functions
   std::string getMessage(const std::string& msgId) const;
   virtual std::unique_ptr<ContentResponse> generateResponseObject() const;
@@ -168,35 +182,21 @@ public: //data
   const std::string m_mimeType;
   const std::string m_template;
   kainjow::mustache::data m_data;
+  std::unique_ptr<TaskbarInfo> m_taskbarInfo;
 };
 
 class UrlNotFoundMsg {};
 
 extern const UrlNotFoundMsg urlNotFoundMsg;
 
-struct TaskbarInfo
-{
-  const std::string bookName;
-  const zim::Archive* const archive;
-
-  TaskbarInfo(const std::string& bookName, const zim::Archive* a = nullptr)
-    : bookName(bookName)
-    , archive(a)
-  {}
-};
-
 struct HTTP404HtmlResponse : ContentResponseBlueprint
 {
   HTTP404HtmlResponse(const InternalServer& server,
                       const RequestContext& request);
 
+  using ContentResponseBlueprint::operator+;
   HTTP404HtmlResponse& operator+(UrlNotFoundMsg /*unused*/);
-  HTTP404HtmlResponse& operator+(const ParameterizedMessage& errorDetails);
-  HTTP404HtmlResponse& operator+(const TaskbarInfo& taskbarInfo);
-
-  std::unique_ptr<ContentResponse> generateResponseObject() const override;
-
-  std::unique_ptr<TaskbarInfo> taskbarInfo;
+  HTTP404HtmlResponse& operator+(const ParameterizedMessage& msg);
 };
 
 class ItemResponse : public Response {
