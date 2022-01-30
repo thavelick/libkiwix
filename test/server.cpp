@@ -322,9 +322,69 @@ TEST_F(ServerTest, 404)
     EXPECT_EQ(404, zfs1_->GET(url)->status) << "url: " << url;
 }
 
+namespace TestingOfHtmlResponses
+{
+
+struct ExpectedResponseData
+{
+  const std::string expectedPageTitle, bookName, bookTitle, expectedBody;
+
+};
+
+enum ExpectedResponseDataType
+{
+  expected_page_title,
+  book_name,
+  book_title,
+  expected_body
+};
+
+// Operator overloading is used as a means of defining a mini-DSL for
+// defining test data in a concise way (see usage in
+// TEST_F(ServerTest, 404WithBodyTesting))
+ExpectedResponseData operator==(ExpectedResponseDataType t, std::string s)
+{
+  switch (t)
+  {
+    case expected_page_title: return ExpectedResponseData{s, "", "", ""};
+    case book_name:           return ExpectedResponseData{"", s, "", ""};
+    case book_title:          return ExpectedResponseData{"", "", s, ""};
+    case expected_body:       return ExpectedResponseData{"", "", "", s};
+    default: assert(false); return ExpectedResponseData{};
+  }
+}
+
+std::string selectNonEmpty(const std::string& a, const std::string& b)
+{
+  if ( a.empty() ) return b;
+
+  assert(b.empty());
+  return a;
+}
+
+ExpectedResponseData operator&&(const ExpectedResponseData& a,
+                                const ExpectedResponseData& b)
+{
+  return ExpectedResponseData{
+    selectNonEmpty(a.expectedPageTitle, b.expectedPageTitle),
+    selectNonEmpty(a.bookName, b.bookName),
+    selectNonEmpty(a.bookTitle, b.bookTitle),
+    selectNonEmpty(a.expectedBody, b.expectedBody)
+  };
+}
+
 class TestContentIn404HtmlResponse
 {
 public:
+  TestContentIn404HtmlResponse(const std::string& url,
+                               const ExpectedResponseData& erd)
+    : url(url)
+    , expectedPageTitle(erd.expectedPageTitle)
+    , bookName(erd.bookName)
+    , bookTitle(erd.bookTitle)
+    , expectedBody(erd.expectedBody)
+  {}
+
   TestContentIn404HtmlResponse(const std::string& url,
                                const std::string& expectedBody)
     : url(url)
@@ -465,11 +525,14 @@ std::string TestContentIn404HtmlResponse::taskbarLinks() const
        + R"("><button>&#x1F3B2;</button></a>)";
 }
 
+} // namespace TestingOfHtmlResponses
+
 TEST_F(ServerTest, 404WithBodyTesting)
 {
+  using namespace TestingOfHtmlResponses;
   const std::vector<TestContentIn404HtmlResponse> testData{
     { /* url */ "/ROOT/random?content=non-existent-book",
-      /* expected body */ R"(
+      expected_body==R"(
     <h1>Not Found</h1>
     <p>
       No such book: non-existent-book
@@ -477,8 +540,8 @@ TEST_F(ServerTest, 404WithBodyTesting)
 )"  },
 
     { /* url */ "/ROOT/random?content=non-existent-book&userlang=hy",
-      /* expected page title */ "Սխալ հասցե",
-      /* expected body */ R"(
+      expected_page_title=="Սխալ հասցե" &&
+      expected_body==R"(
     <h1>Սխալ հասցե</h1>
     <p>
       Գիրքը բացակայում է՝ non-existent-book
@@ -486,7 +549,7 @@ TEST_F(ServerTest, 404WithBodyTesting)
 )"  },
 
     { /* url */ "/ROOT/suggest?content=no-such-book&term=whatever",
-      /* expected body */ R"(
+      expected_body==R"(
     <h1>Not Found</h1>
     <p>
       No such book: no-such-book
@@ -494,7 +557,7 @@ TEST_F(ServerTest, 404WithBodyTesting)
 )"  },
 
     { /* url */ "/ROOT/catalog/",
-      /* expected body */ R"(
+      expected_body==R"(
     <h1>Not Found</h1>
     <p>
       The requested URL "/ROOT/catalog/" was not found on this server.
@@ -502,8 +565,8 @@ TEST_F(ServerTest, 404WithBodyTesting)
 )"  },
 
     { /* url */ "/ROOT/catalog/?userlang=hy",
-      /* expected page title */ "Սխալ հասցե",
-      /* expected body */ R"(
+      expected_page_title=="Սխալ հասցե" &&
+      expected_body==R"(
     <h1>Սխալ հասցե</h1>
     <p>
       Սխալ հասցե՝ /ROOT/catalog/
@@ -511,7 +574,7 @@ TEST_F(ServerTest, 404WithBodyTesting)
 )"  },
 
     { /* url */ "/ROOT/catalog/invalid_endpoint",
-      /* expected body */ R"(
+      expected_body==R"(
     <h1>Not Found</h1>
     <p>
       The requested URL "/ROOT/catalog/invalid_endpoint" was not found on this server.
@@ -519,8 +582,8 @@ TEST_F(ServerTest, 404WithBodyTesting)
 )"  },
 
     { /* url */ "/ROOT/catalog/invalid_endpoint?userlang=hy",
-      /* expected page title */ "Սխալ հասցե",
-      /* expected body */ R"(
+      expected_page_title=="Սխալ հասցե" &&
+      expected_body==R"(
     <h1>Սխալ հասցե</h1>
     <p>
       Սխալ հասցե՝ /ROOT/catalog/invalid_endpoint
@@ -528,7 +591,7 @@ TEST_F(ServerTest, 404WithBodyTesting)
 )"  },
 
     { /* url */ "/ROOT/invalid-book/whatever",
-      /* expected body */ R"(
+      expected_body==R"(
     <h1>Not Found</h1>
     <p>
       The requested URL "/ROOT/invalid-book/whatever" was not found on this server.
@@ -539,9 +602,9 @@ TEST_F(ServerTest, 404WithBodyTesting)
 )"  },
 
     { /* url */ "/ROOT/zimfile/invalid-article",
-      /* book name */  "zimfile",
-      /* book title */ "Ray Charles",
-      /* expected body */ R"(
+      book_name=="zimfile" &&
+      book_title=="Ray Charles" &&
+      expected_body==R"(
     <h1>Not Found</h1>
     <p>
       The requested URL "/ROOT/zimfile/invalid-article" was not found on this server.
@@ -552,7 +615,7 @@ TEST_F(ServerTest, 404WithBodyTesting)
 )"  },
 
     { /* url */ "/ROOT/raw/no-such-book/meta/Title",
-      /* expected body */ R"(
+      expected_body==R"(
     <h1>Not Found</h1>
     <p>
       The requested URL "/ROOT/raw/no-such-book/meta/Title" was not found on this server.
@@ -563,7 +626,7 @@ TEST_F(ServerTest, 404WithBodyTesting)
 )"  },
 
     { /* url */ "/ROOT/raw/zimfile/XYZ",
-      /* expected body */ R"(
+      expected_body==R"(
     <h1>Not Found</h1>
     <p>
       The requested URL "/ROOT/raw/zimfile/XYZ" was not found on this server.
@@ -574,7 +637,7 @@ TEST_F(ServerTest, 404WithBodyTesting)
 )"  },
 
     { /* url */ "/ROOT/raw/zimfile/meta/invalid-metadata",
-      /* expected body */ R"(
+      expected_body==R"(
     <h1>Not Found</h1>
     <p>
       The requested URL "/ROOT/raw/zimfile/meta/invalid-metadata" was not found on this server.
@@ -585,7 +648,7 @@ TEST_F(ServerTest, 404WithBodyTesting)
 )"  },
 
     { /* url */ "/ROOT/raw/zimfile/content/invalid-article",
-      /* expected body */ R"(
+      expected_body==R"(
     <h1>Not Found</h1>
     <p>
       The requested URL "/ROOT/raw/zimfile/content/invalid-article" was not found on this server.
