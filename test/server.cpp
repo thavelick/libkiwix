@@ -413,7 +413,8 @@ std::string TestContentIn404HtmlResponse::expectedResponse() const
     R"FRAG(</title>
 )FRAG",
 
-    R"FRAG(  <link type="root" href="/ROOT"><link type="text/css" href="/ROOT/skin/jquery-ui/jquery-ui.min.css" rel="Stylesheet" />
+    R"FRAG(
+  <link type="root" href="/ROOT"><link type="text/css" href="/ROOT/skin/jquery-ui/jquery-ui.min.css" rel="Stylesheet" />
 <link type="text/css" href="/ROOT/skin/jquery-ui/jquery-ui.theme.min.css" rel="Stylesheet" />
 <link type="text/css" href="/ROOT/skin/taskbar.css" rel="Stylesheet" />
 <script type="text/javascript" src="/ROOT/skin/jquery-ui/external/jquery/jquery.js" defer></script>
@@ -480,8 +481,7 @@ std::string TestContentIn404HtmlResponse::pageCssLink() const
 
   return R"(    <link type="text/css" href=")"
        + expectedCssUrl
-       + R"(" rel="Stylesheet" />
-)";
+       + R"(" rel="Stylesheet" />)";
 }
 
 std::string TestContentIn404HtmlResponse::hiddenBookNameInput() const
