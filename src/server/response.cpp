@@ -103,14 +103,13 @@ std::unique_ptr<ContentResponse> ContentResponseBlueprint::generateResponseObjec
 HTTPErrorHtmlResponse::HTTPErrorHtmlResponse(const InternalServer& server,
                                              const RequestContext& request,
                                              int httpStatusCode,
-                                             const std::string& templateStr,
                                              const std::string& pageTitleMsgId,
                                              const std::string& headingMsgId)
   : ContentResponseBlueprint(&server,
                              &request,
                              MHD_HTTP_NOT_FOUND,
                              "text/html",
-                             templateStr)
+                             RESOURCE::templates::error_html)
 {
   kainjow::mustache::list emptyList;
   this->m_data = kainjow::mustache::object{
@@ -125,7 +124,6 @@ HTTP404HtmlResponse::HTTP404HtmlResponse(const InternalServer& server,
   : HTTPErrorHtmlResponse(server,
                           request,
                           MHD_HTTP_NOT_FOUND,
-                          RESOURCE::templates::_404_html,
                           "404-page-title",
                           "404-page-heading")
 {
