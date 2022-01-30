@@ -100,29 +100,44 @@ std::unique_ptr<ContentResponse> ContentResponseBlueprint::generateResponseObjec
        : std::move(r);
 }
 
-HTTP404HtmlResponse::HTTP404HtmlResponse(const InternalServer& server,
-                                         const RequestContext& request)
+HTTPErrorHtmlResponse::HTTPErrorHtmlResponse(const InternalServer& server,
+                                             const RequestContext& request,
+                                             int httpStatusCode,
+                                             const std::string& templateStr,
+                                             const std::string& pageTitleMsgId,
+                                             const std::string& headingMsgId)
   : ContentResponseBlueprint(&server,
                              &request,
                              MHD_HTTP_NOT_FOUND,
                              "text/html",
-                             RESOURCE::templates::_404_html)
+                             templateStr)
 {
   kainjow::mustache::list emptyList;
   this->m_data = kainjow::mustache::object{
-                    {"PAGE_TITLE",   getMessage("404-page-title")},
-                    {"PAGE_HEADING", getMessage("404-page-heading")},
+                    {"PAGE_TITLE",   getMessage(pageTitleMsgId)},
+                    {"PAGE_HEADING", getMessage(headingMsgId)},
                     {"details", emptyList}
   };
 }
 
-HTTP404HtmlResponse& HTTP404HtmlResponse::operator+(UrlNotFoundMsg /*unused*/)
+HTTP404HtmlResponse::HTTP404HtmlResponse(const InternalServer& server,
+                                             const RequestContext& request)
+  : HTTPErrorHtmlResponse(server,
+                          request,
+                          MHD_HTTP_NOT_FOUND,
+                          RESOURCE::templates::_404_html,
+                          "404-page-title",
+                          "404-page-heading")
+{
+}
+
+HTTPErrorHtmlResponse& HTTP404HtmlResponse::operator+(UrlNotFoundMsg /*unused*/)
 {
   const std::string requestUrl = m_request.get_full_url();
   return *this + ParameterizedMessage("url-not-found", {{"url", requestUrl}});
 }
 
-HTTP404HtmlResponse& HTTP404HtmlResponse::operator+(const ParameterizedMessage& details)
+HTTPErrorHtmlResponse& HTTPErrorHtmlResponse::operator+(const ParameterizedMessage& details)
 {
   const std::string msgText = details.getText(m_request.get_user_language());
   m_data["details"].push_back({"p", msgText});

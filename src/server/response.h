@@ -185,18 +185,30 @@ public: //data
   std::unique_ptr<TaskbarInfo> m_taskbarInfo;
 };
 
+struct HTTPErrorHtmlResponse : ContentResponseBlueprint
+{
+  HTTPErrorHtmlResponse(const InternalServer& server,
+                      const RequestContext& request,
+                      int httpStatusCode,
+                      const std::string& templateStr,
+                      const std::string& pageTitleMsgId,
+                      const std::string& headingMsgId);
+
+  using ContentResponseBlueprint::operator+;
+  HTTPErrorHtmlResponse& operator+(const ParameterizedMessage& msg);
+};
+
 class UrlNotFoundMsg {};
 
 extern const UrlNotFoundMsg urlNotFoundMsg;
 
-struct HTTP404HtmlResponse : ContentResponseBlueprint
+struct HTTP404HtmlResponse : HTTPErrorHtmlResponse
 {
   HTTP404HtmlResponse(const InternalServer& server,
                       const RequestContext& request);
 
-  using ContentResponseBlueprint::operator+;
-  HTTP404HtmlResponse& operator+(UrlNotFoundMsg /*unused*/);
-  HTTP404HtmlResponse& operator+(const ParameterizedMessage& msg);
+  using HTTPErrorHtmlResponse::operator+;
+  HTTPErrorHtmlResponse& operator+(UrlNotFoundMsg /*unused*/);
 };
 
 class ItemResponse : public Response {
