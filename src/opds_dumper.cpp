@@ -72,9 +72,6 @@ IllustrationInfo getBookIllustrationInfo(const Book& book)
 
 kainjow::mustache::object getSingleBookData(const Book& book)
 {
-    const MustacheData bookUrl = book.getUrl().empty()
-                               ? MustacheData(false)
-                               : MustacheData(book.getUrl());
     return kainjow::mustache::object{
       {"id", book.getId()},
       {"name", book.getName()},
@@ -90,7 +87,7 @@ kainjow::mustache::object getSingleBookData(const Book& book)
       {"media_count", to_string(book.getMediaCount())},
       {"author_name", book.getCreator()},
       {"publisher_name", book.getPublisher()},
-      {"url", bookUrl},
+      {"url", onlyAsNonEmptyMustacheValue(book.getUrl())},
       {"size", to_string(book.getSize())},
       {"icons", getBookIllustrationInfo(book)},
     };
@@ -142,7 +139,7 @@ string OPDSDumper::dumpOPDSFeed(const std::vector<std::string>& bookIds, const s
      {"date", gen_date_str()},
      {"root", rootLocation},
      {"feed_id", gen_uuid(libraryId + "/catalog/search?"+query)},
-     {"filter", query.empty() ? MustacheData(false) : MustacheData(query)},
+     {"filter", onlyAsNonEmptyMustacheValue(query)},
      {"totalResults", to_string(m_totalResults)},
      {"startIndex", to_string(m_startIndex)},
      {"itemsPerPage", to_string(m_count)},
@@ -162,7 +159,7 @@ string OPDSDumper::dumpOPDSFeedV2(const std::vector<std::string>& bookIds, const
      {"date", gen_date_str()},
      {"endpoint_root", endpointRoot},
      {"feed_id", gen_uuid(libraryId + endpoint + "?" + query)},
-     {"filter", query.empty() ? MustacheData(false) : MustacheData(query)},
+     {"filter", onlyAsNonEmptyMustacheValue(query)},
      {"query", query.empty() ? "" : "?" + urlEncode(query)},
      {"totalResults", to_string(m_totalResults)},
      {"startIndex", to_string(m_startIndex)},
