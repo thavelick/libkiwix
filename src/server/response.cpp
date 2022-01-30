@@ -108,7 +108,7 @@ HTTPErrorHtmlResponse::HTTPErrorHtmlResponse(const InternalServer& server,
   : ContentResponseBlueprint(&server,
                              &request,
                              MHD_HTTP_NOT_FOUND,
-                             "text/html",
+                             "text/html; charset=utf-8",
                              RESOURCE::templates::error_html)
 {
   kainjow::mustache::list emptyList;
