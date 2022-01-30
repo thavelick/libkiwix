@@ -16,4 +16,5 @@
 	, "no-search-results-page-title": "Fulltext search unavailable"
 	, "no-search-results": "There is no article with the title <b>\"{{{SEARCH_PATTERN}}}\"</b> and the fulltext search engine is not available for this content."
 	, "library-button-text": "Go to welcome page"
+	, "home-button-text": "Go to the main page of '{{BOOK_TITLE}}'"
 }
