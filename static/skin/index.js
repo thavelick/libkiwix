@@ -243,8 +243,9 @@
             const data = new window.DOMParser().parseFromString(await resp.text(), 'application/xml');
             let optionStr = '';
             data.querySelectorAll('entry').forEach(entry => {
-                const title = getInnerHtml(entry, 'title');
+                let title = getInnerHtml(entry, 'title');
                 const value = getInnerHtml(entry, valueEntryNode);
+                title = title == value ? iso639_3[value] : title;
                 const hfTitle = humanFriendlyTitle(title);
                 languages[value] = hfTitle;
                 optionStr += (hfTitle != '') ? `<option value="${value}">${hfTitle}</option>` : '';

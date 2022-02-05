@@ -185,3 +185,40 @@ const iso6391To3 = {
     "zh": "zho",
     "zu": "zul"
 }
+
+// This contains mappings of language codes with language names not given by libicu
+// Source: https://iso639-3.sil.org/code_tables/639/data/ for language names from codes. Wikipedia pages for native names
+// eslint-disable-next-line no-unused-vars
+const iso639_3 = {
+    "atj":"atikamekw",
+    "azb":"آذربایجان دیلی",
+    "bcl":"central bikol",
+    "bgs":"tagabawa",
+    "bxr":"буряад хэлэн",
+    "cbk":"chavacano",
+    "cdo":"閩東語",
+    "diq":"dimli",
+    "dty":"डोटेली",
+    "eml":"emiliân-rumagnōl",
+    "fbs":"српскохрватски",
+    "kbp":"kabɩyɛ",
+    "kld":"Gamilaraay",
+    "lbe":"лакку маз",
+    "lbj":"ལ་དྭགས་སྐད་",
+    "map":"Austronesian",
+    "mhr":"марий йылме",
+    "mnw":"ဘာသာမန်",
+    "myn":"mayan",
+    "nah":"nahuatl",
+    "nai":"north American Indian",
+    "nds":"plattdütsch",
+    "nrm":"bhasa narom",
+    "olo":"livvi",
+    "pih":"Pitcairn-Norfolk",
+    "pnb":"Western Panjabi",
+    "rmr":"Caló",
+    "rmy":"romani shib",
+    "roa":"romance languages",
+    "twi":"twi",
+    "ido":"ido"
+}
