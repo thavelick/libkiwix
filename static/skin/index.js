@@ -245,9 +245,12 @@
             data.querySelectorAll('entry').forEach(entry => {
                 let title = getInnerHtml(entry, 'title');
                 const value = getInnerHtml(entry, valueEntryNode);
-                title = title == value ? iso639_3[value] : title;
-                const hfTitle = humanFriendlyTitle(title);
-                languages[value] = hfTitle;
+                let hfTitle = humanFriendlyTitle(title);
+                if (valueEntryNode == 'language') {
+                    title = title == value ? iso639_3[value] : title;
+                    hfTitle = humanFriendlyTitle(title);
+                    languages[value] = hfTitle;
+                }
                 optionStr += (hfTitle != '') ? `<option value="${value}">${hfTitle}</option>` : '';
             });
             document.querySelector(nodeQuery).innerHTML += optionStr;
