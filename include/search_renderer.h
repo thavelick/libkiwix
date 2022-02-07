@@ -51,6 +51,8 @@ class SearchRenderer
    *
    * @param srs The `SearchResultSet` to render.
    * @param mapper The `NameMapper` to use to do the rendering.
+   * @param library The `Library` to use to look up book details for search
+   *        results
    * @param start The start offset used for the srs.
    * @param estimatedResultCount The estimatedResultCount of the whole search
    */
