@@ -22,6 +22,7 @@
 
 #include <string>
 #include <zim/search.h>
+#include <library.h>
 
 namespace kiwix
 {
@@ -53,7 +54,7 @@ class SearchRenderer
    * @param start The start offset used for the srs.
    * @param estimatedResultCount The estimatedResultCount of the whole search
    */
-  SearchRenderer(zim::SearchResultSet srs, NameMapper* mapper,
+  SearchRenderer(zim::SearchResultSet srs, NameMapper* mapper, Library* library,
                  unsigned int start, unsigned int estimatedResultCount);
 
   ~SearchRenderer();
@@ -91,6 +92,7 @@ class SearchRenderer
   std::string beautifyInteger(const unsigned int number);
   zim::SearchResultSet m_srs;
   NameMapper* mp_nameMapper;
+  Library* mp_library;
   std::string searchContent;
   std::string searchPattern;
   std::string protocolPrefix;
