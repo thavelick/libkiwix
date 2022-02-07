@@ -1,5 +1,31 @@
-Libkiwix
+Libkiwix (@thavelick's fork)
 ========
+
+Additional Features
+-------------------
+* Search results link to Duck Duck Go lite for online search.
+  * This makes it so I can be offline first, only uses an internet search engine when needed
+  * I didn't feel like this had general enough appeal to make a PR for the upstream fork,
+   but if anyone needs similar functionality see this
+   [commit](https://github.com/thavelick/libkiwix/commit/ea2bb7e11193838d94048e04c5be5706d8cb3bc9)
+* Search results list the zim archive/book they came from
+  * PR: https://github.com/kiwix/libkiwix/pull/705
+
+How I build/use this fork
+------------------------
+This is probably not the official/proper way to do this but it is what
+works for me.
+
+1. Install libkiwix and kiwix-tools using my OS's package manager (I use Arch)
+2. clone https://github.com/kiwix/kiwix-build
+3. build libkiwix once with `kiwix-build libkiwix`
+4. edit `SOURCE/libkiwix/.git/config`. Change the origin to point to this repo. `git pull`
+5. checkout the `my_main` branch
+6. rebuild with `kiwix-build libkiwix` (from the kiwix-build folder)
+7. `sudo cp BUILD_native_dyn/libkiwix/src/libkiwix.so.10.0.1 /usr/lib/libkiwix.so.10.0.1`
+8. `kiwix-serve --port 8181 ~/.local/share/kiwix/*.zim`
+
+---
 
 The Libkiwix provides the [Kiwix](https://kiwix.org) software suite
 core. It contains the code shared by all Kiwix ports (Windows,
