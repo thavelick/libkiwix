@@ -58,8 +58,6 @@ extern "C" {
 
 #include <zim/uuid.h>
 #include <zim/error.h>
-#include <zim/search.h>
-#include <zim/suggestion.h>
 #include <zim/entry.h>
 #include <zim/item.h>
 
@@ -80,6 +78,7 @@ extern "C" {
 
 #define MAX_SEARCH_LEN 140
 #define KIWIX_MIN_CONTENT_SIZE_TO_DEFLATE 100
+#define DEFAULT_CACHE_SIZE 2
 
 namespace kiwix {
 
@@ -96,6 +95,18 @@ inline std::string normalizeRootUrl(std::string rootUrl)
   return rootUrl.empty() ? rootUrl : "/" + rootUrl;
 }
 
+// Returns the value of env var `name` if found, otherwise returns defaultVal
+unsigned int getCacheLength(const char* name, unsigned int defaultVal) {
+  try {
+    const char* envString = std::getenv(name);
+    if (envString == nullptr) {
+      throw std::runtime_error("Environment variable not set");
+    }
+    return extractFromString<unsigned int>(envString);
+  } catch (...) {}
+
+  return defaultVal;
+}
 } // unnamed namespace
 
 static IdNameMapper defaultNameMapper;
@@ -134,7 +145,10 @@ InternalServer::InternalServer(Library* library,
   m_ipConnectionLimit(ipConnectionLimit),
   mp_daemon(nullptr),
   mp_library(library),
-  mp_nameMapper(nameMapper ? nameMapper : &defaultNameMapper)
+  mp_nameMapper(nameMapper ? nameMapper : &defaultNameMapper),
+  searcherCache(getCacheLength("SEARCHER_CACHE_SIZE", std::max((unsigned int) (mp_library->getBookCount(true, true)*0.1), 1U))),
+  searchCache(getCacheLength("SEARCH_CACHE_SIZE", DEFAULT_CACHE_SIZE)),
+  suggestionSearcherCache(getCacheLength("SUGGESTION_SEARCHER_CACHE_SIZE", std::max((unsigned int) (mp_library->getBookCount(true, true)*0.1), 1U)))
 {}
 
 bool InternalServer::start() {
@@ -145,7 +159,6 @@ bool InternalServer::start() {
 #endif
   if (m_verbose.load())
     flags |= MHD_USE_DEBUG;
-
 
   struct sockaddr_in sockAddr;
   memset(&sockAddr, 0, sizeof(sockAddr));
@@ -340,14 +353,15 @@ std::unique_ptr<Response> InternalServer::build_homepage(const RequestContext& r
  * Archive and Zim handlers begin
  **/
 
-// TODO: retrieve searcher from caching mechanism
-SuggestionsList_t getSuggestions(const zim::Archive* const archive,
-                  const std::string& queryString, int start, int suggestionCount)
+SuggestionsList_t getSuggestions(SuggestionSearcherCache& cache, const zim::Archive* const archive,
+                  const std::string& bookId, const std::string& queryString, int start, int suggestionCount)
 {
   SuggestionsList_t suggestions;
-  auto searcher = zim::SuggestionSearcher(*archive);
+  std::shared_ptr<zim::SuggestionSearcher> searcher;
+  searcher = cache.getOrPut(bookId, [=](){ return make_shared<zim::SuggestionSearcher>(*archive); });
+
   if (archive->hasTitleIndex()) {
-    auto search = searcher.suggest(queryString);
+    auto search = searcher->suggest(queryString);
     auto srs = search.getResults(start, suggestionCount);
 
     for (auto it : srs) {
@@ -360,7 +374,7 @@ SuggestionsList_t getSuggestions(const zim::Archive* const archive,
     std::vector<std::string> variants = getTitleVariants(queryString);
     int currCount = 0;
     for (auto it = variants.begin(); it != variants.end() && currCount < suggestionCount; it++) {
-      auto search = searcher.suggest(queryString);
+      auto search = searcher->suggest(queryString);
       auto srs = search.getResults(0, suggestionCount);
       for (auto it : srs) {
         SuggestionItem suggestion(it.getTitle(), kiwix::normalize(it.getTitle()),
@@ -380,11 +394,11 @@ std::unique_ptr<Response> InternalServer::handle_suggest(const RequestContext& r
     printf("** running handle_suggest\n");
   }
 
-  std::string bookName;
+  std::string bookName, bookId;
   std::shared_ptr<zim::Archive> archive;
   try {
     bookName = request.get_argument("content");
-    const std::string bookId = mp_nameMapper->getIdForName(bookName);
+    bookId = mp_nameMapper->getIdForName(bookName);
     archive = mp_library->getArchiveById(bookId);
   } catch (const std::out_of_range&) {
     // error handled by the archive == nullptr check below
@@ -411,7 +425,8 @@ std::unique_ptr<Response> InternalServer::handle_suggest(const RequestContext& r
   bool first = true;
 
   /* Get the suggestions */
-  SuggestionsList_t suggestions = getSuggestions(archive.get(), queryString, start, count);
+  SuggestionsList_t suggestions = getSuggestions(suggestionSearcherCache, archive.get(),
+                                                  bookId, queryString, start, count);
   for(auto& suggestion:suggestions) {
     MustacheData result;
     result.set("label", suggestion.getTitle());
@@ -489,11 +504,11 @@ std::unique_ptr<Response> InternalServer::handle_search(const RequestContext& re
   } catch(const std::out_of_range&) {}
     catch(const std::invalid_argument&) {}
 
-  std::string bookName;
+  std::string bookName, bookId;
   std::shared_ptr<zim::Archive> archive;
   try {
     bookName = request.get_argument("content");
-    const std::string bookId = mp_nameMapper->getIdForName(bookName);
+    bookId = mp_nameMapper->getIdForName(bookName);
     archive = mp_library->getArchiveById(bookId);
   } catch (const std::out_of_range&) {}
 
@@ -502,6 +517,7 @@ std::unique_ptr<Response> InternalServer::handle_search(const RequestContext& re
     || (patternString.empty() && ! has_geo_query) ) {
     auto data = get_default_data();
     data.set("pattern", encodeDiples(patternString));
+    data.set("root", m_root);
     auto response = ContentResponse::build(*this, RESOURCE::templates::no_search_result_html, data, "text/html; charset=utf-8");
     response->set_taskbar(bookName, archive ? getArchiveTitle(*archive) : "");
     response->set_code(MHD_HTTP_NOT_FOUND);
@@ -510,7 +526,7 @@ std::unique_ptr<Response> InternalServer::handle_search(const RequestContext& re
 
   std::shared_ptr<zim::Searcher> searcher;
   if (archive) {
-    searcher = std::make_shared<zim::Searcher>(*archive);
+    searcher = searcherCache.getOrPut(bookId, [=](){ return std::make_shared<zim::Searcher>(*archive);});
   } else {
     for (auto& bookId: mp_library->filter(kiwix::Filter().local(true).valid(true))) {
       auto currentArchive = mp_library->getArchiveById(bookId);
@@ -541,6 +557,7 @@ std::unique_ptr<Response> InternalServer::handle_search(const RequestContext& re
   }
 
   /* Get the results */
+  std::string queryString;
   try {
     zim::Query query;
     if (patternString.empty()) {
@@ -550,6 +567,7 @@ std::unique_ptr<Response> InternalServer::handle_search(const RequestContext& re
       }
 
       query.setQuery("");
+      queryString = "GEO:" + to_string(latitude) + to_string(longitude) + to_string(distance);
       query.setGeorange(latitude, longitude, distance);
     } else {
       // Execute Ft search
@@ -557,13 +575,16 @@ std::unique_ptr<Response> InternalServer::handle_search(const RequestContext& re
           cout << "Performing query `" << patternString << "'" << endl;
       }
 
-      std::string queryString = removeAccents(patternString);
+      queryString = "FT:" + removeAccents(patternString);
       query.setQuery(queryString);
     }
+    queryString = bookId + queryString;
 
-    zim::Search search = searcher->search(query);
-    SearchRenderer renderer(search.getResults(start, pageLength), mp_nameMapper, mp_library, start,
-                            search.getEstimatedMatches());
+    std::shared_ptr<zim::Search> search;
+    search = searchCache.getOrPut(queryString, [=](){ return make_shared<zim::Search>(searcher->search(query));});
+
+    SearchRenderer renderer(search->getResults(start, pageLength), mp_nameMapper, mp_library, start,
+                            search->getEstimatedMatches());
     renderer.setSearchPattern(patternString);
     renderer.setSearchContent(bookName);
     renderer.setProtocolPrefix(m_root + "/");
@@ -778,7 +799,7 @@ std::unique_ptr<Response> InternalServer::handle_content(const RequestContext& r
   } catch (const std::out_of_range& e) {}
 
   if (archive == nullptr) {
-    std::string searchURL = m_root+"/search?pattern="+pattern; // Make a full search on the entire library.
+    std::string searchURL = m_root + "/search?pattern=" + kiwix::urlEncode(pattern, true); // Make a full search on the entire library.
     const std::string details = searchSuggestionHTML(searchURL, kiwix::urlDecode(pattern));
 
     return Response::build_404(*this, request.get_full_url(), bookName, "", details);
@@ -811,7 +832,7 @@ std::unique_ptr<Response> InternalServer::handle_content(const RequestContext& r
     if (m_verbose.load())
       printf("Failed to find %s\n", urlStr.c_str());
 
-    std::string searchURL = m_root+"/search?content="+bookName+"&pattern="+pattern; // Make a search on this specific book only.
+    std::string searchURL = m_root + "/search?content=" + bookName + "&pattern=" + kiwix::urlEncode(pattern, true); // Make a search on this specific book only.
     const std::string details = searchSuggestionHTML(searchURL, kiwix::urlDecode(pattern));
 
     return Response::build_404(*this, request.get_full_url(), bookName, getArchiveTitle(*archive), details);

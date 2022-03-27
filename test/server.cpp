@@ -45,6 +45,18 @@ Headers invariantHeaders(Headers headers)
   return headers;
 }
 
+// Output generated via mustache templates sometimes contains end-of-line
+// whitespace. This complicates representing the expected output of a unit-test
+// as C++ raw strings in editors that are configured to delete EOL whitespace.
+// A workaround is to put special markers (//EOLWHITESPACEMARKER) at the end
+// of such lines in the expected output string and remove them at runtime.
+// This is exactly what this function is for.
+std::string removeEOLWhitespaceMarkers(const std::string& s)
+{
+  const std::regex pattern("//EOLWHITESPACEMARKER");
+  return std::regex_replace(s, pattern, "");
+}
+
 
 class ZimFileServer
 {
@@ -291,6 +303,7 @@ const char* urls404[] = {
   "/ROOT/random",
   "/ROOT/random?content=non-existent-book",
   "/ROOT/search",
+  "/ROOT/search?content=non-existing-book&pattern=asdfqwerty",
   "/ROOT/suggest",
   "/ROOT/suggest?content=non-existent-book&term=abcd",
   "/ROOT/catch/external",
@@ -308,6 +321,379 @@ TEST_F(ServerTest, 404)
 {
   for ( const char* url : urls404 )
     EXPECT_EQ(404, zfs1_->GET(url)->status) << "url: " << url;
+}
+
+namespace TestingOfHtmlResponses
+{
+
+struct ExpectedResponseData
+{
+  const std::string expectedPageTitle;
+  const std::string expectedCssUrl;
+  const std::string bookName;
+  const std::string bookTitle;
+  const std::string expectedBody;
+};
+
+enum ExpectedResponseDataType
+{
+  expected_page_title,
+  expected_css_url,
+  book_name,
+  book_title,
+  expected_body
+};
+
+// Operator overloading is used as a means of defining a mini-DSL for
+// defining test data in a concise way (see usage in
+// TEST_F(ServerTest, 404WithBodyTesting))
+ExpectedResponseData operator==(ExpectedResponseDataType t, std::string s)
+{
+  switch (t)
+  {
+    case expected_page_title: return ExpectedResponseData{s, "", "", "", ""};
+    case expected_css_url:    return ExpectedResponseData{"", s, "", "", ""};
+    case book_name:           return ExpectedResponseData{"", "", s, "", ""};
+    case book_title:          return ExpectedResponseData{"", "", "", s, ""};
+    case expected_body:       return ExpectedResponseData{"", "", "", "", s};
+    default: assert(false); return ExpectedResponseData{};
+  }
+}
+
+std::string selectNonEmpty(const std::string& a, const std::string& b)
+{
+  if ( a.empty() ) return b;
+
+  assert(b.empty());
+  return a;
+}
+
+ExpectedResponseData operator&&(const ExpectedResponseData& a,
+                                const ExpectedResponseData& b)
+{
+  return ExpectedResponseData{
+    selectNonEmpty(a.expectedPageTitle, b.expectedPageTitle),
+    selectNonEmpty(a.expectedCssUrl, b.expectedCssUrl),
+    selectNonEmpty(a.bookName, b.bookName),
+    selectNonEmpty(a.bookTitle, b.bookTitle),
+    selectNonEmpty(a.expectedBody, b.expectedBody)
+  };
+}
+
+class TestContentIn404HtmlResponse : public ExpectedResponseData
+{
+public:
+  TestContentIn404HtmlResponse(const std::string& url,
+                               const ExpectedResponseData& erd)
+    : ExpectedResponseData(erd)
+    , url(url)
+  {}
+
+  const std::string url;
+
+  std::string expectedResponse() const;
+
+private:
+  std::string pageTitle() const;
+  std::string pageCssLink() const;
+  std::string hiddenBookNameInput() const;
+  std::string searchPatternInput() const;
+  std::string taskbarLinks() const;
+};
+
+std::string TestContentIn404HtmlResponse::expectedResponse() const
+{
+  const std::string frag[] =  {
+    R"FRAG(<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta content="text/html;charset=UTF-8" http-equiv="content-type" />
+    <title>)FRAG",
+
+    R"FRAG(</title>
+)FRAG",
+
+    R"FRAG(  <link type="root" href="/ROOT"><link type="text/css" href="/ROOT/skin/jquery-ui/jquery-ui.min.css" rel="Stylesheet" />
+<link type="text/css" href="/ROOT/skin/jquery-ui/jquery-ui.theme.min.css" rel="Stylesheet" />
+<link type="text/css" href="/ROOT/skin/taskbar.css" rel="Stylesheet" />
+<script type="text/javascript" src="/ROOT/skin/jquery-ui/external/jquery/jquery.js" defer></script>
+<script type="text/javascript" src="/ROOT/skin/jquery-ui/jquery-ui.min.js" defer></script>
+<script type="text/javascript" src="/ROOT/skin/taskbar.js" defer></script>
+</head>
+  <body><span class="kiwix">
+  <span id="kiwixtoolbar" class="ui-widget-header">
+    <div class="kiwix_centered">
+      <div class="kiwix_searchform">
+        <form class="kiwixsearch" method="GET" action="/ROOT/search" id="kiwixsearchform">
+          )FRAG",
+
+  R"FRAG(
+          <label for="kiwixsearchbox">&#x1f50d;</label>
+)FRAG",
+
+  R"FRAG(        </form>
+      </div>
+        <input type="checkbox" id="kiwix_button_show_toggle">
+        <label for="kiwix_button_show_toggle"><img src="/ROOT/skin/caret.png" alt=""></label>
+        <div class="kiwix_button_cont">
+            <a id="kiwix_serve_taskbar_library_button" title="Go to welcome page" aria-label="Go to welcome page" href="/ROOT/"><button>&#x1f3e0;</button></a>
+          )FRAG",
+
+  R"FRAG(
+        </div>
+    </div>
+  </span>
+</span>
+)FRAG",
+
+  R"FRAG(  </body>
+</html>
+)FRAG"
+  };
+
+  return frag[0]
+       + pageTitle()
+       + frag[1]
+       + pageCssLink()
+       + frag[2]
+       + hiddenBookNameInput()
+       + frag[3]
+       + searchPatternInput()
+       + frag[4]
+       + taskbarLinks()
+       + frag[5]
+       + removeEOLWhitespaceMarkers(expectedBody)
+       + frag[6];
+}
+
+std::string TestContentIn404HtmlResponse::pageTitle() const
+{
+  return expectedPageTitle.empty()
+       ? "Content not found"
+       : expectedPageTitle;
+}
+
+std::string TestContentIn404HtmlResponse::pageCssLink() const
+{
+  if ( expectedCssUrl.empty() )
+    return "";
+
+  return R"(    <link type="text/css" href=")"
+       + expectedCssUrl
+       + R"(" rel="Stylesheet" />
+)";
+}
+
+std::string TestContentIn404HtmlResponse::hiddenBookNameInput() const
+{
+  return bookName.empty()
+       ? ""
+       : R"(<input type="hidden" name="content" value=")" + bookName + R"(" />)";
+}
+
+std::string TestContentIn404HtmlResponse::searchPatternInput() const
+{
+  return R"(          <input autocomplete="off" class="ui-autocomplete-input" id="kiwixsearchbox" name="pattern" type="text" title="Search ')"
+       + bookTitle
+       + R"('" aria-label="Search ')"
+       + bookTitle
+       + R"('">
+)";
+}
+
+std::string TestContentIn404HtmlResponse::taskbarLinks() const
+{
+  if ( bookName.empty() )
+    return "";
+
+  return R"(<a id="kiwix_serve_taskbar_home_button" title="Go to the main page of ')"
+       + bookTitle
+       + R"('" aria-label="Go to the main page of ')"
+       + bookTitle
+       + R"('" href="/ROOT/)"
+       + bookName
+       + R"(/"><button>)"
+       + bookTitle
+       + R"(</button></a>
+          <a id="kiwix_serve_taskbar_random_button" title="Go to a randomly selected page" aria-label="Go to a randomly selected page"
+            href="/ROOT/random?content=)"
+       + bookName
+       + R"("><button>&#x1F3B2;</button></a>)";
+}
+
+} // namespace TestingOfHtmlResponses
+
+TEST_F(ServerTest, 404WithBodyTesting)
+{
+  using namespace TestingOfHtmlResponses;
+  const std::vector<TestContentIn404HtmlResponse> testData{
+    { /* url */ "/ROOT/random?content=non-existent-book",
+      expected_body==R"(
+    <h1>Not Found</h1>
+    //EOLWHITESPACEMARKER
+    <p>
+      No such book: non-existent-book
+    </p>
+)"  },
+
+    { /* url */ "/ROOT/suggest?content=no-such-book&term=whatever",
+      expected_body==R"(
+    <h1>Not Found</h1>
+    //EOLWHITESPACEMARKER
+    <p>
+      No such book: no-such-book
+    </p>
+)"  },
+
+    { /* url */ "/ROOT/catalog/",
+      expected_body==R"(
+    <h1>Not Found</h1>
+    <p>
+      The requested URL "/ROOT/catalog/" was not found on this server.
+    </p>
+    <p>
+      //EOLWHITESPACEMARKER
+    </p>
+)"  },
+
+    { /* url */ "/ROOT/catalog/invalid_endpoint",
+      expected_body==R"(
+    <h1>Not Found</h1>
+    <p>
+      The requested URL "/ROOT/catalog/invalid_endpoint" was not found on this server.
+    </p>
+    <p>
+      //EOLWHITESPACEMARKER
+    </p>
+)"  },
+
+    { /* url */ "/ROOT/invalid-book/whatever",
+      expected_body==R"(
+    <h1>Not Found</h1>
+    <p>
+      The requested URL "/ROOT/invalid-book/whatever" was not found on this server.
+    </p>
+    <p>
+      Make a full text search for <a href="/ROOT/search?pattern=whatever">whatever</a>
+    </p>
+)"  },
+
+    { /* url */ "/ROOT/zimfile/invalid-article",
+      book_name=="zimfile" &&
+      book_title=="Ray Charles" &&
+      expected_body==R"(
+    <h1>Not Found</h1>
+    <p>
+      The requested URL "/ROOT/zimfile/invalid-article" was not found on this server.
+    </p>
+    <p>
+      Make a full text search for <a href="/ROOT/search?content=zimfile&pattern=invalid-article">invalid-article</a>
+    </p>
+)"  },
+
+    { /* url */ R"(/ROOT/"><svg onload=alert(1)>)",
+      expected_body==R"(
+    <h1>Not Found</h1>
+    <p>
+      The requested URL "/ROOT/&quot;&gt;&lt;svg onload=alert(1)&gt;" was not found on this server.
+    </p>
+    <p>
+      Make a full text search for <a href="/ROOT/search?pattern=%22%3E%3Csvg%20onload%3Dalert(1)%3E">&quot;&gt;&lt;svg onload=alert(1)&gt;</a>
+    </p>
+)"  },
+
+    { /* url */ R"(/ROOT/zimfile/"><svg onload=alert(1)>)",
+      book_name=="zimfile" &&
+      book_title=="Ray Charles" &&
+      expected_body==R"(
+    <h1>Not Found</h1>
+    <p>
+      The requested URL "/ROOT/zimfile/&quot;&gt;&lt;svg onload=alert(1)&gt;" was not found on this server.
+    </p>
+    <p>
+      Make a full text search for <a href="/ROOT/search?content=zimfile&pattern=%22%3E%3Csvg%20onload%3Dalert(1)%3E">&quot;&gt;&lt;svg onload=alert(1)&gt;</a>
+    </p>
+)"  },
+
+    { /* url */ "/ROOT/raw/no-such-book/meta/Title",
+      expected_body==R"(
+    <h1>Not Found</h1>
+    <p>
+      The requested URL "/ROOT/raw/no-such-book/meta/Title" was not found on this server.
+    </p>
+    <p>
+      No such book: no-such-book
+    </p>
+)"  },
+
+    { /* url */ "/ROOT/raw/zimfile/XYZ",
+      expected_body==R"(
+    <h1>Not Found</h1>
+    <p>
+      The requested URL "/ROOT/raw/zimfile/XYZ" was not found on this server.
+    </p>
+    <p>
+      XYZ is not a valid request for raw content.
+    </p>
+)"  },
+
+    { /* url */ "/ROOT/raw/zimfile/meta/invalid-metadata",
+      book_name=="zimfile" &&
+      book_title=="Ray Charles" &&
+      expected_body==R"(
+    <h1>Not Found</h1>
+    <p>
+      The requested URL "/ROOT/raw/zimfile/meta/invalid-metadata" was not found on this server.
+    </p>
+    <p>
+      Cannot find meta entry invalid-metadata
+    </p>
+)"  },
+
+    { /* url */ "/ROOT/raw/zimfile/content/invalid-article",
+      book_name=="zimfile" &&
+      book_title=="Ray Charles" &&
+      expected_body==R"(
+    <h1>Not Found</h1>
+    <p>
+      The requested URL "/ROOT/raw/zimfile/content/invalid-article" was not found on this server.
+    </p>
+    <p>
+      Cannot find content entry invalid-article
+    </p>
+)"  },
+
+    { /* url */ "/ROOT/search?content=zimfile",
+      expected_page_title=="Fulltext search unavailable" &&
+      expected_css_url=="/ROOT/skin/search_results.css" &&
+      book_name=="zimfile" &&
+      book_title=="Ray Charles" &&
+      expected_body==R"(
+    <div class="header">Not found</div>
+    <p>
+      There is no article with the title <b> ""</b>
+      and the fulltext search engine is not available for this content.
+    </p>
+)"  },
+
+    { /* url */ "/ROOT/search?content=non-existent-book&pattern=asdfqwerty",
+      expected_page_title=="Fulltext search unavailable" &&
+      expected_css_url=="/ROOT/skin/search_results.css" &&
+      expected_body==R"(
+    <div class="header">Not found</div>
+    <p>
+      There is no article with the title <b> "asdfqwerty"</b>
+      and the fulltext search engine is not available for this content.
+    </p>
+)"  },
+  };
+
+  for ( const auto& t : testData ) {
+    const TestContext ctx{ {"url", t.url} };
+    const auto r = zfs1_->GET(t.url.c_str());
+    EXPECT_EQ(r->status, 404) << ctx;
+    EXPECT_EQ(r->body, t.expectedResponse()) << ctx;
+  }
 }
 
 TEST_F(ServerTest, RandomPageRedirectsToAnExistingArticle)
@@ -444,7 +830,7 @@ TEST_F(ServerTest, ETagOfUncompressibleContentIsNotAffectedByAcceptEncoding)
 // NOTE: The "Date" header (which should belong to that list as required
 // NOTE: by RFC 7232) is not included (since the result of this function
 // NOTE: will be used to check the equality of headers from the 200 and 304
-// NOTe: responses).
+// NOTE: responses).
 Headers special304Headers(const httplib::Response& r)
 {
   Headers result;
@@ -625,6 +1011,149 @@ TEST_F(ServerTest, RangeHeaderIsCaseInsensitive)
   }
 }
 
+TEST_F(ServerTest, suggestions)
+{
+  typedef std::pair<std::string, std::string> UrlAndExpectedResponse;
+  const std::vector<UrlAndExpectedResponse> testData{
+    { /* url: */ "/ROOT/suggest?content=zimfile&term=thing",
+R"EXPECTEDRESPONSE([
+  {
+    "value" : "Doing His Thing",
+    "label" : "Doing His &lt;b&gt;Thing&lt;/b&gt;",
+    "kind" : "path"
+      , "path" : "A/Doing_His_Thing"
+  },
+  {
+    "value" : "We Didn&apos;t See a Thing",
+    "label" : "We Didn&apos;t See a &lt;b&gt;Thing&lt;/b&gt;",
+    "kind" : "path"
+      , "path" : "A/We_Didn&apos;t_See_a_Thing"
+  },
+  {
+    "value" : "thing ",
+    "label" : "containing &apos;thing&apos;...",
+    "kind" : "pattern"
+    //EOLWHITESPACEMARKER
+  }
+]
+)EXPECTEDRESPONSE"
+    },
+    { /* url: */ "/ROOT/suggest?content=zimfile&term=old%20sun",
+R"EXPECTEDRESPONSE([
+  {
+    "value" : "That Lucky Old Sun",
+    "label" : "That Lucky &lt;b&gt;Old&lt;/b&gt; &lt;b&gt;Sun&lt;/b&gt;",
+    "kind" : "path"
+      , "path" : "A/That_Lucky_Old_Sun"
+  },
+  {
+    "value" : "old sun ",
+    "label" : "containing &apos;old sun&apos;...",
+    "kind" : "pattern"
+    //EOLWHITESPACEMARKER
+  }
+]
+)EXPECTEDRESPONSE"
+    },
+    { /* url: */ "/ROOT/suggest?content=zimfile&term=abracadabra",
+R"EXPECTEDRESPONSE([
+  {
+    "value" : "abracadabra ",
+    "label" : "containing &apos;abracadabra&apos;...",
+    "kind" : "pattern"
+    //EOLWHITESPACEMARKER
+  }
+]
+)EXPECTEDRESPONSE"
+    },
+    { // Test handling of & (%26 when url-encoded) in the search string
+      /* url: */ "/ROOT/suggest?content=zimfile&term=A%26B",
+R"EXPECTEDRESPONSE([
+  {
+    "value" : "A&amp;B ",
+    "label" : "containing &apos;A&amp;B&apos;...",
+    "kind" : "pattern"
+    //EOLWHITESPACEMARKER
+  }
+]
+)EXPECTEDRESPONSE"
+    },
+  };
+
+  for ( const auto& urlAndExpectedResponse : testData ) {
+    const std::string url = urlAndExpectedResponse.first;
+    const std::string expectedResponse = urlAndExpectedResponse.second;
+    const TestContext ctx{ {"url", url} };
+    const auto r = zfs1_->GET(url.c_str());
+    EXPECT_EQ(r->status, 200) << ctx;
+    EXPECT_EQ(r->body, removeEOLWhitespaceMarkers(expectedResponse)) << ctx;
+  }
+}
+
+TEST_F(ServerTest, suggestions_in_range)
+{
+  /**
+   * Attempt to get 50 suggestions in steps of 5
+   * The suggestions are returned in the json format
+   * [{sugg1}, {sugg2}, ... , {suggN}, {suggest ft search}]
+   * Assuming the number of suggestions = (occurance of "{" - 1)
+   */
+  {
+    int suggCount = 0;
+    for (int i = 0; i < 10; i++) {
+      std::string url = "/ROOT/suggest?content=zimfile&term=ray&start=" + std::to_string(i*5) + "&count=5";
+      const auto r = zfs1_->GET(url.c_str());
+      std::string body = r->body;
+      int currCount = std::count(body.begin(), body.end(), '{') - 1;
+      ASSERT_EQ(currCount, 5);
+      suggCount += currCount;
+    }
+    ASSERT_EQ(suggCount, 50);
+  }
+
+  // Attempt to get 10 suggestions in steps of 5 even though there are only 8
+  {
+    std::string url = "/ROOT/suggest?content=zimfile&term=song+for+you&start=0&count=5";
+    const auto r1 = zfs1_->GET(url.c_str());
+    std::string body = r1->body;
+    int currCount = std::count(body.begin(), body.end(), '{') - 1;
+    ASSERT_EQ(currCount, 5);
+
+    url = "/ROOT/suggest?content=zimfile&term=song+for+you&start=5&count=5";
+    const auto r2 = zfs1_->GET(url.c_str());
+    body = r2->body;
+    currCount = std::count(body.begin(), body.end(), '{') - 1;
+    ASSERT_EQ(currCount, 3);
+  }
+
+  // Attempt to get 10 suggestions even though there is only 1
+  {
+    std::string url = "/ROOT/suggest?content=zimfile&term=strong&start=0&count=5";
+    const auto r = zfs1_->GET(url.c_str());
+    std::string body = r->body;
+    int currCount = std::count(body.begin(), body.end(), '{') - 1;
+    ASSERT_EQ(currCount, 1);
+  }
+
+  // No Suggestion
+  {
+    std::string url = "/ROOT/suggest?content=zimfile&term=oops&start=0&count=5";
+    const auto r = zfs1_->GET(url.c_str());
+    std::string body = r->body;
+    int currCount = std::count(body.begin(), body.end(), '{') - 1;
+    ASSERT_EQ(currCount, 0);
+  }
+
+  // Out of bound value
+  {
+    std::string url = "/ROOT/suggest?content=zimfile&term=ray&start=-2&count=-1";
+    const auto r = zfs1_->GET(url.c_str());
+    std::string body = r->body;
+    int currCount = std::count(body.begin(), body.end(), '{') - 1;
+    ASSERT_EQ(currCount, 0);
+  }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Testing of the library-related functionality of the server
 ////////////////////////////////////////////////////////////////////////////////
@@ -679,8 +1208,9 @@ std::string maskVariableOPDSFeedData(std::string s)
 }
 
 #define OPDS_FEED_TAG \
-    "<feed xmlns=\"http://www.w3.org/2005/Atom\"" \
-         " xmlns:opds=\"http://opds-spec.org/2010/catalog\">\n"
+    "<feed xmlns=\"http://www.w3.org/2005/Atom\"\n" \
+    "      xmlns:dc=\"http://purl.org/dc/terms/\"\n" \
+    "      xmlns:opds=\"http://opds-spec.org/2010/catalog\">\n"
 
 #define CATALOG_LINK_TAGS \
     "  <link rel=\"self\" href=\"\" type=\"application/atom+xml\" />\n" \
@@ -708,6 +1238,7 @@ std::string maskVariableOPDSFeedData(std::string s)
     "    <publisher>\n"                                                 \
     "      <name>Kiwix</name>\n"                                        \
     "    </publisher>\n"                                                \
+    "    <dc:issued>2020-03-31T00:00:00Z</dc:issued>\n"                 \
     "    <link rel=\"http://opds-spec.org/acquisition/open-access\" type=\"application/x-zim\" href=\"https://github.com/kiwix/libkiwix/raw/master/test/data/zimfile%26other.zim\" length=\"569344\" />\n" \
     "  </entry>\n"
 
@@ -734,6 +1265,7 @@ std::string maskVariableOPDSFeedData(std::string s)
     "    <publisher>\n"                                                 \
     "      <name>Kiwix</name>\n"                                        \
     "    </publisher>\n"                                                \
+    "    <dc:issued>2020-03-31T00:00:00Z</dc:issued>\n"                 \
     "    <link rel=\"http://opds-spec.org/acquisition/open-access\" type=\"application/x-zim\" href=\"https://github.com/kiwix/libkiwix/raw/master/test/data/zimfile.zim\" length=\"569344\" />\n" \
     "  </entry>\n"
 
@@ -757,6 +1289,7 @@ std::string maskVariableOPDSFeedData(std::string s)
     "    <publisher>\n"                                                 \
     "      <name>Kiwix</name>\n"                                        \
     "    </publisher>\n"                                                \
+    "    <dc:issued>2020-03-31T00:00:00Z</dc:issued>\n"                 \
     "    <link rel=\"http://opds-spec.org/acquisition/open-access\" type=\"application/x-zim\" href=\"https://github.com/kiwix/libkiwix/raw/master/test/data/zimfile.zim\" length=\"125952\" />\n" \
     "  </entry>\n"
 
@@ -1172,6 +1705,7 @@ TEST_F(LibraryServerTest, catalog_v2_languages)
 #define CATALOG_V2_ENTRIES_PREAMBLE0(x)                       \
     "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"            \
     "<feed xmlns=\"http://www.w3.org/2005/Atom\"\n"           \
+    "      xmlns:dc=\"http://purl.org/dc/terms/\"\n"          \
     "      xmlns:opds=\"https://specs.opds.io/opds-1.2\"\n"   \
     "      xmlns:opensearch=\"http://a9.com/-/spec/opensearch/1.1/\">\n"  \
     "  <id>12345678-90ab-cdef-1234-567890abcdef</id>\n"       \
@@ -1274,70 +1808,6 @@ TEST_F(LibraryServerTest, catalog_v2_entries_filtered_by_search_terms)
     CHARLES_RAY_CATALOG_ENTRY
     "</feed>\n"
   );
-}
-
-TEST_F(LibraryServerTest, suggestions_in_range)
-{
-  /**
-   * Attempt to get 50 suggestions in steps of 5
-   * The suggestions are returned in the json format
-   * [{sugg1}, {sugg2}, ... , {suggN}, {suggest ft search}]
-   * Assuming the number of suggestions = (occurance of "{" - 1)
-   */
-  {
-    int suggCount = 0;
-    for (int i = 0; i < 10; i++) {
-      std::string url = "/ROOT/suggest?content=zimfile&term=ray&start=" + std::to_string(i*5) + "&count=5";
-      const auto r = zfs1_->GET(url.c_str());
-      std::string body = r->body;
-      int currCount = std::count(body.begin(), body.end(), '{') - 1;
-      ASSERT_EQ(currCount, 5);
-      suggCount += currCount;
-    }
-    ASSERT_EQ(suggCount, 50);
-  }
-
-  // Attempt to get 10 suggestions in steps of 5 even though there are only 8
-  {
-    std::string url = "/ROOT/suggest?content=zimfile&term=song+for+you&start=0&count=5";
-    const auto r1 = zfs1_->GET(url.c_str());
-    std::string body = r1->body;
-    int currCount = std::count(body.begin(), body.end(), '{') - 1;
-    ASSERT_EQ(currCount, 5);
-
-    url = "/ROOT/suggest?content=zimfile&term=song+for+you&start=5&count=5";
-    const auto r2 = zfs1_->GET(url.c_str());
-    body = r2->body;
-    currCount = std::count(body.begin(), body.end(), '{') - 1;
-    ASSERT_EQ(currCount, 3);
-  }
-
-  // Attempt to get 10 suggestions even though there is only 1
-  {
-    std::string url = "/ROOT/suggest?content=zimfile&term=strong&start=0&count=5";
-    const auto r = zfs1_->GET(url.c_str());
-    std::string body = r->body;
-    int currCount = std::count(body.begin(), body.end(), '{') - 1;
-    ASSERT_EQ(currCount, 1);
-  }
-
-  // No Suggestion
-  {
-    std::string url = "/ROOT/suggest?content=zimfile&term=oops&start=0&count=5";
-    const auto r = zfs1_->GET(url.c_str());
-    std::string body = r->body;
-    int currCount = std::count(body.begin(), body.end(), '{') - 1;
-    ASSERT_EQ(currCount, 0);
-  }
-
-  // Out of bound value
-  {
-    std::string url = "/ROOT/suggest?content=zimfile&term=ray&start=-2&count=-1";
-    const auto r = zfs1_->GET(url.c_str());
-    std::string body = r->body;
-    int currCount = std::count(body.begin(), body.end(), '{') - 1;
-    ASSERT_EQ(currCount, 0);
-  }
 }
 
 TEST_F(LibraryServerTest, catalog_v2_individual_entry_access)
