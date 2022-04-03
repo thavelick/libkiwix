@@ -109,6 +109,54 @@ unsigned int getCacheLength(const char* name, unsigned int defaultVal) {
 }
 } // unnamed namespace
 
+SearchInfo::SearchInfo(const std::string& pattern)
+  : pattern(pattern),
+    geoQuery()
+{}
+
+SearchInfo::SearchInfo(const std::string& pattern, GeoQuery geoQuery)
+  : pattern(pattern),
+    geoQuery(geoQuery)
+{}
+
+SearchInfo::SearchInfo(const RequestContext& request)
+  : pattern(request.get_optional_param<std::string>("pattern", "")),
+    geoQuery(),
+    bookName(request.get_optional_param<std::string>("content", ""))
+{
+  /* Retrive geo search */
+  try {
+    auto latitude = request.get_argument<float>("latitude");
+    auto longitude = request.get_argument<float>("longitude");
+    auto distance = request.get_argument<float>("distance");
+    geoQuery = GeoQuery(latitude, longitude, distance);
+  } catch(const std::out_of_range&) {}
+    catch(const std::invalid_argument&) {}
+
+  if (!geoQuery && pattern.empty()) {
+    throw std::invalid_argument("No query provided.");
+  }
+}
+
+zim::Query SearchInfo::getZimQuery(bool verbose) const {
+  zim::Query query;
+  if (verbose) {
+    std::cout << "Performing query '" << pattern<< "'";
+  }
+  query.setQuery(pattern);
+  if (geoQuery) {
+    if (verbose) {
+      std::cout << " with geo query '" << geoQuery.distance << "&(" << geoQuery.latitude << ";" << geoQuery.longitude << ")'";
+    }
+    query.setGeorange(geoQuery.latitude, geoQuery.longitude, geoQuery.distance);
+  }
+  if (verbose) {
+    std::cout << std::endl;
+  }
+  return query;
+}
+
+
 static IdNameMapper defaultNameMapper;
 
 static MHD_Result staticHandlerCallback(void* cls,
@@ -278,8 +326,10 @@ MHD_Result InternalServer::handlerCallback(struct MHD_Connection* connection,
 std::unique_ptr<Response> InternalServer::handle_request(const RequestContext& request)
 {
   try {
-    if (! request.is_valid_url())
-      return Response::build_404(*this, request.get_full_url(), "", "");
+    if (! request.is_valid_url()) {
+      return HTTP404HtmlResponse(*this, request)
+             + urlNotFoundMsg;
+    }
 
     const ETag etag = get_matching_if_none_match_etag(request);
     if ( etag )
@@ -387,6 +437,15 @@ SuggestionsList_t getSuggestions(SuggestionSearcherCache& cache, const zim::Arch
   return suggestions;
 }
 
+namespace
+{
+
+std::string noSuchBookErrorMsg(const std::string& bookName)
+{
+  return "No such book: " + bookName;
+}
+
+} // unnamed namespace
 
 std::unique_ptr<Response> InternalServer::handle_suggest(const RequestContext& request)
 {
@@ -405,8 +464,9 @@ std::unique_ptr<Response> InternalServer::handle_suggest(const RequestContext& r
   }
 
   if (archive == nullptr) {
-    const std::string error_details = "No such book: " + bookName;
-    return Response::build_404(*this, "", bookName, "", error_details);
+    return HTTP404HtmlResponse(*this, request)
+           + noSuchBookErrorMsg(bookName)
+           + TaskbarInfo(bookName);
   }
 
   const auto queryString = request.get_optional_param("term", std::string());
@@ -476,7 +536,8 @@ std::unique_ptr<Response> InternalServer::handle_skin(const RequestContext& requ
     response->set_cacheable();
     return std::move(response);
   } catch (const ResourceNotFound& e) {
-    return Response::build_404(*this, request.get_full_url(), "", "");
+    return HTTP404HtmlResponse(*this, request)
+           + urlNotFoundMsg;
   }
 }
 
@@ -486,114 +547,86 @@ std::unique_ptr<Response> InternalServer::handle_search(const RequestContext& re
     printf("** running handle_search\n");
   }
 
-  std::string patternString;
   try {
-    patternString = request.get_argument("pattern");
-  } catch (const std::out_of_range&) {}
+    auto searchInfo = SearchInfo(request);
 
-  /* Retrive geo search */
-  bool has_geo_query = false;
-  float latitude = 0;
-  float longitude = 0;
-  float distance = 0;
-  try {
-    latitude = request.get_argument<float>("latitude");
-    longitude = request.get_argument<float>("longitude");
-    distance = request.get_argument<float>("distance");
-    has_geo_query = true;
-  } catch(const std::out_of_range&) {}
-    catch(const std::invalid_argument&) {}
-
-  std::string bookName, bookId;
-  std::shared_ptr<zim::Archive> archive;
-  try {
-    bookName = request.get_argument("content");
-    bookId = mp_nameMapper->getIdForName(bookName);
-    archive = mp_library->getArchiveById(bookId);
-  } catch (const std::out_of_range&) {}
-
-  /* Make the search */
-  if ( (!archive && !bookName.empty())
-    || (patternString.empty() && ! has_geo_query) ) {
-    auto data = get_default_data();
-    data.set("pattern", encodeDiples(patternString));
-    data.set("root", m_root);
-    auto response = ContentResponse::build(*this, RESOURCE::templates::no_search_result_html, data, "text/html; charset=utf-8");
-    response->set_taskbar(bookName, archive ? getArchiveTitle(*archive) : "");
-    response->set_code(MHD_HTTP_NOT_FOUND);
-    return std::move(response);
-  }
-
-  std::shared_ptr<zim::Searcher> searcher;
-  if (archive) {
-    searcher = searcherCache.getOrPut(bookId, [=](){ return std::make_shared<zim::Searcher>(*archive);});
-  } else {
-    for (auto& bookId: mp_library->filter(kiwix::Filter().local(true).valid(true))) {
-      auto currentArchive = mp_library->getArchiveById(bookId);
-      if (currentArchive) {
-        if (! searcher) {
-          searcher = std::make_shared<zim::Searcher>(*currentArchive);
-        } else {
-          searcher->addArchive(*currentArchive);
-        }
+    std::string bookId;
+    std::shared_ptr<zim::Archive> archive;
+    if (!searchInfo.bookName.empty()) {
+      try {
+        bookId = mp_nameMapper->getIdForName(searchInfo.bookName);
+        archive = mp_library->getArchiveById(bookId);
+      } catch (const std::out_of_range&) {
+        throw std::invalid_argument("The requested book doesn't exist.");
       }
     }
-  }
 
-  auto start = 0;
-  try {
-    start = request.get_argument<unsigned int>("start");
-  } catch (const std::exception&) {}
 
-  auto pageLength = 25;
-  try {
-    pageLength = request.get_argument<unsigned int>("pageLength");
-  } catch (const std::exception&) {}
-  if (pageLength > MAX_SEARCH_LEN) {
-    pageLength = MAX_SEARCH_LEN;
-  }
-  if (pageLength == 0) {
-    pageLength = 25;
-  }
-
-  /* Get the results */
-  std::string queryString;
-  try {
-    zim::Query query;
-    if (patternString.empty()) {
-      // Execute geo-search
-      if (m_verbose.load()) {
-        cout << "Performing geo query `" << distance << "&(" << latitude << ";" << longitude << ")'" << endl;
-      }
-
-      query.setQuery("");
-      queryString = "GEO:" + to_string(latitude) + to_string(longitude) + to_string(distance);
-      query.setGeorange(latitude, longitude, distance);
-    } else {
-      // Execute Ft search
-      if (m_verbose.load()) {
-          cout << "Performing query `" << patternString << "'" << endl;
-      }
-
-      queryString = "FT:" + removeAccents(patternString);
-      query.setQuery(queryString);
-    }
-    queryString = bookId + queryString;
-
+    /* Make the search */
+    // Try to get a search from the searchInfo, else build it
     std::shared_ptr<zim::Search> search;
-    search = searchCache.getOrPut(queryString, [=](){ return make_shared<zim::Search>(searcher->search(query));});
+    try {
+      search = searchCache.getOrPut(searchInfo,
+        [=](){
+          std::shared_ptr<zim::Searcher> searcher;
+          if (archive) {
+            searcher = searcherCache.getOrPut(bookId, [=](){ return std::make_shared<zim::Searcher>(*archive);});
+          } else {
+            for (auto& bookId: mp_library->filter(kiwix::Filter().local(true).valid(true))) {
+              auto currentArchive = mp_library->getArchiveById(bookId);
+              if (currentArchive) {
+                if (! searcher) {
+                  searcher = std::make_shared<zim::Searcher>(*currentArchive);
+                } else {
+                  searcher->addArchive(*currentArchive);
+                }
+              }
+           }
+          }
+          return make_shared<zim::Search>(searcher->search(searchInfo.getZimQuery(m_verbose.load())));
+        }
+      );
+    } catch(std::runtime_error& e) {
+      // Searcher->search will throw a runtime error if there is no valid xapian database to do the search.
+      // (in case of zim file not containing a index)
+      auto data = get_default_data();
+      data.set("pattern", encodeDiples(searchInfo.pattern));
+      auto response = ContentResponse::build(*this, RESOURCE::templates::no_search_result_html, data, "text/html; charset=utf-8");
+      response->set_code(MHD_HTTP_NOT_FOUND);
+      return withTaskbarInfo(searchInfo.bookName, archive.get(), std::move(response));
+    }
 
+
+    auto start = 0;
+    try {
+      start = request.get_argument<unsigned int>("start");
+    } catch (const std::exception&) {}
+
+    auto pageLength = 25;
+    try {
+      pageLength = request.get_argument<unsigned int>("pageLength");
+    } catch (const std::exception&) {}
+    if (pageLength > MAX_SEARCH_LEN) {
+      pageLength = MAX_SEARCH_LEN;
+    }
+    if (pageLength == 0) {
+      pageLength = 25;
+    }
+
+    /* Get the results */
     SearchRenderer renderer(search->getResults(start, pageLength), mp_nameMapper, mp_library, start,
                             search->getEstimatedMatches());
-    renderer.setSearchPattern(patternString);
-    renderer.setSearchContent(bookName);
+    renderer.setSearchPattern(searchInfo.pattern);
+    renderer.setSearchContent(searchInfo.bookName);
     renderer.setProtocolPrefix(m_root + "/");
     renderer.setSearchProtocolPrefix(m_root + "/search?");
     renderer.setPageLength(pageLength);
     auto response = ContentResponse::build(*this, renderer.getHtml(), "text/html; charset=utf-8");
-    response->set_taskbar(bookName, archive ? getArchiveTitle(*archive) : "");
-
-    return std::move(response);
+    return withTaskbarInfo(searchInfo.bookName, archive.get(), std::move(response));
+  } catch (const std::invalid_argument& e) {
+    return HTTP400HtmlResponse(*this, request)
+      + invalidUrlMsg
+      + std::string(e.what());
   } catch (const std::exception& e) {
     std::cerr << e.what() << std::endl;
     return Response::build_500(*this, e.what());
@@ -617,8 +650,9 @@ std::unique_ptr<Response> InternalServer::handle_random(const RequestContext& re
   }
 
   if (archive == nullptr) {
-    const std::string error_details = "No such book: " + bookName;
-    return Response::build_404(*this, "", bookName, "", error_details);
+    return HTTP404HtmlResponse(*this, request)
+           + noSuchBookErrorMsg(bookName)
+           + TaskbarInfo(bookName);
   }
 
   try {
@@ -626,7 +660,8 @@ std::unique_ptr<Response> InternalServer::handle_random(const RequestContext& re
     return build_redirect(bookName, getFinalItem(*archive, entry));
   } catch(zim::EntryNotFound& e) {
     const std::string error_details = "Oops! Failed to pick a random article :(";
-    return Response::build_404(*this, "", bookName, getArchiveTitle(*archive), error_details);
+    auto response = Response::build_404(*this, "", error_details);
+    return withTaskbarInfo(bookName, archive.get(), std::move(response));
   }
 }
 
@@ -637,8 +672,10 @@ std::unique_ptr<Response> InternalServer::handle_captured_external(const Request
     source = kiwix::urlDecode(request.get_argument("source"));
   } catch (const std::out_of_range& e) {}
 
-  if (source.empty())
-    return Response::build_404(*this, request.get_full_url(), "", "");
+  if (source.empty()) {
+    return HTTP404HtmlResponse(*this, request)
+           + urlNotFoundMsg;
+  }
 
   auto data = get_default_data();
   data.set("source", source);
@@ -657,7 +694,8 @@ std::unique_ptr<Response> InternalServer::handle_catalog(const RequestContext& r
     host = request.get_header("Host");
     url  = request.get_url_part(1);
   } catch (const std::out_of_range&) {
-    return Response::build_404(*this, request.get_full_url(), "", "");
+    return HTTP404HtmlResponse(*this, request)
+           + urlNotFoundMsg;
   }
 
   if (url == "v2") {
@@ -665,7 +703,8 @@ std::unique_ptr<Response> InternalServer::handle_catalog(const RequestContext& r
   }
 
   if (url != "searchdescription.xml" && url != "root.xml" && url != "search") {
-    return Response::build_404(*this, request.get_full_url(), "", "");
+    return HTTP404HtmlResponse(*this, request)
+           + urlNotFoundMsg;
   }
 
   if (url == "searchdescription.xml") {
@@ -802,7 +841,8 @@ std::unique_ptr<Response> InternalServer::handle_content(const RequestContext& r
     std::string searchURL = m_root + "/search?pattern=" + kiwix::urlEncode(pattern, true); // Make a full search on the entire library.
     const std::string details = searchSuggestionHTML(searchURL, kiwix::urlDecode(pattern));
 
-    return Response::build_404(*this, request.get_full_url(), bookName, "", details);
+    auto response = Response::build_404(*this, request.get_full_url(), details);
+    return withTaskbarInfo(bookName, nullptr, std::move(response));
   }
 
   auto urlStr = request.get_url().substr(bookName.size()+1);
@@ -819,7 +859,7 @@ std::unique_ptr<Response> InternalServer::handle_content(const RequestContext& r
     }
     auto response = ItemResponse::build(*this, request, entry.getItem());
     try {
-      dynamic_cast<ContentResponse&>(*response).set_taskbar(bookName, getArchiveTitle(*archive));
+      dynamic_cast<ContentResponse&>(*response).set_taskbar(bookName, archive.get());
     } catch (std::bad_cast& e) {}
 
     if (m_verbose.load()) {
@@ -835,7 +875,8 @@ std::unique_ptr<Response> InternalServer::handle_content(const RequestContext& r
     std::string searchURL = m_root + "/search?content=" + bookName + "&pattern=" + kiwix::urlEncode(pattern, true); // Make a search on this specific book only.
     const std::string details = searchSuggestionHTML(searchURL, kiwix::urlDecode(pattern));
 
-    return Response::build_404(*this, request.get_full_url(), bookName, getArchiveTitle(*archive), details);
+    auto response = Response::build_404(*this, request.get_full_url(), details);
+    return withTaskbarInfo(bookName, archive.get(), std::move(response));
   }
 }
 
@@ -852,12 +893,13 @@ std::unique_ptr<Response> InternalServer::handle_raw(const RequestContext& reque
      bookName = request.get_url_part(1);
      kind = request.get_url_part(2);
   } catch (const std::out_of_range& e) {
-     return Response::build_404(*this, request.get_full_url(), bookName, "", "");
+    return HTTP404HtmlResponse(*this, request)
+           + urlNotFoundMsg;
   }
 
   if (kind != "meta" && kind!= "content") {
     const std::string error_details = kind + " is not a valid request for raw content.";
-    return Response::build_404(*this, request.get_full_url(), bookName, "", error_details);
+    return Response::build_404(*this, request.get_full_url(), error_details);
   }
 
   std::shared_ptr<zim::Archive> archive;
@@ -867,8 +909,9 @@ std::unique_ptr<Response> InternalServer::handle_raw(const RequestContext& reque
   } catch (const std::out_of_range& e) {}
 
   if (archive == nullptr) {
-    const std::string error_details = "No such book: " + bookName;
-    return Response::build_404(*this, request.get_full_url(), bookName, "", error_details);
+    return HTTP404HtmlResponse(*this, request)
+           + urlNotFoundMsg
+           + noSuchBookErrorMsg(bookName);
   }
 
   // Remove the beggining of the path:
@@ -893,7 +936,7 @@ std::unique_ptr<Response> InternalServer::handle_raw(const RequestContext& reque
       printf("Failed to find %s\n", itemPath.c_str());
     }
     const std::string error_details = "Cannot find " + kind + " entry " + itemPath;
-    return Response::build_404(*this, request.get_full_url(), bookName, getArchiveTitle(*archive), error_details);
+    return Response::build_404(*this, request.get_full_url(), error_details);
   }
 }
 
