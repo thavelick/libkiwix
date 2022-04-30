@@ -2,10 +2,13 @@
 <html xmlns="http://www.w3.org/1999/xhtml">
   <head>
     <meta content="text/html;charset=UTF-8" http-equiv="content-type" />
-    <title>Invalid request</title>
+    <title>{{PAGE_TITLE}}</title>
+{{#CSS_URL}}
+    <link type="text/css" href="{{{CSS_URL}}}" rel="Stylesheet" />
+{{/CSS_URL}}
   </head>
   <body>
-    <h1>Invalid request</h1>
+    <h1>{{PAGE_HEADING}}</h1>
 {{#details}}
     <p>
       {{{p}}}

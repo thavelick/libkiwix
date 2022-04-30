@@ -92,7 +92,9 @@ class RequestContext {
 
     ByteRange get_range() const;
 
-    bool can_compress() const { return acceptEncodingDeflate; }
+    bool can_compress() const { return acceptEncodingGzip; }
+
+    std::string get_user_language() const;
 
   private: // data
     std::string full_url;
@@ -101,7 +103,7 @@ class RequestContext {
     std::string version;
     unsigned long long requestIndex;
 
-    bool acceptEncodingDeflate;
+    bool acceptEncodingGzip;
 
     ByteRange byteRange_;
     std::map<std::string, std::string> headers;

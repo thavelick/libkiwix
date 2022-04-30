@@ -31,8 +31,17 @@
 #include <mustache.hpp>
 #include <zlib.h>
 
+#include <array>
 
-#define KIWIX_MIN_CONTENT_SIZE_TO_DEFLATE 100
+// This is somehow a magic value.
+// If this value is too small, we will compress (and lost cpu time) too much
+// content.
+// If this value is too big, we will not compress enough content and send too
+// much data.
+// If we assume that MTU is 1500 Bytes it is useless to compress
+// content smaller as the content will be sent in one packet anyway.
+// 1400 Bytes seems to be a common accepted limit.
+#define KIWIX_MIN_CONTENT_SIZE_TO_COMPRESS 1400
 
 namespace kiwix {
 
@@ -57,6 +66,41 @@ bool is_compressible_mime_type(const std::string& mimeType)
       || mimeType.find("application/opensearchdescription") != string::npos
       || mimeType.find("application/json") != string::npos;
 }
+
+bool compress(std::string &content) {
+  z_stream strm;
+  strm.zalloc = Z_NULL;
+  strm.zfree = Z_NULL;
+  strm.opaque = Z_NULL;
+
+  auto ret = deflateInit2(&strm, Z_DEFAULT_COMPRESSION, Z_DEFLATED, 31, 8,
+                          Z_DEFAULT_STRATEGY);
+  if (ret != Z_OK) { return false; }
+
+  strm.avail_in = static_cast<decltype(strm.avail_in)>(content.size());
+  strm.next_in =
+      const_cast<Bytef *>(reinterpret_cast<const Bytef *>(content.data()));
+
+  std::string compressed;
+
+  std::array<char, 16384> buff{};
+  do {
+    strm.avail_out = buff.size();
+    strm.next_out = reinterpret_cast<Bytef *>(buff.data());
+    ret = deflate(&strm, Z_FINISH);
+    assert(ret != Z_STREAM_ERROR);
+    compressed.append(buff.data(), buff.size() - strm.avail_out);
+  } while (strm.avail_out == 0);
+
+  assert(ret == Z_STREAM_END);
+  assert(strm.avail_in == 0);
+
+  content.swap(compressed);
+
+  deflateEnd(&strm);
+  return true;
+}
+
 
 
 } // unnamed namespace
@@ -84,81 +128,84 @@ std::unique_ptr<Response> Response::build_304(const InternalServer& server, cons
   return response;
 }
 
-kainjow::mustache::data make404ResponseData(const std::string& url, const std::string& details)
-{
-  kainjow::mustache::list pList;
-  if ( !url.empty() ) {
-    kainjow::mustache::mustache msgTmpl(R"(The requested URL "{{url}}" was not found on this server.)");
-    const auto urlNotFoundMsg = msgTmpl.render({"url", url});
-    pList.push_back({"p", urlNotFoundMsg});
-  }
-  pList.push_back({"p", details});
-  return {"details", pList};
-}
-
-std::unique_ptr<ContentResponse> Response::build_404(const InternalServer& server, const std::string& url, const std::string& details)
-{
-  return build_404(server, make404ResponseData(url, details));
-}
-
-std::unique_ptr<ContentResponse> Response::build_404(const InternalServer& server, const kainjow::mustache::data& data)
-{
-  auto response = ContentResponse::build(server, RESOURCE::templates::_404_html, data, "text/html");
-  response->set_code(MHD_HTTP_NOT_FOUND);
-
-  return response;
-}
-
 const UrlNotFoundMsg urlNotFoundMsg;
 const InvalidUrlMsg invalidUrlMsg;
+
+std::string ContentResponseBlueprint::getMessage(const std::string& msgId) const
+{
+  return getTranslatedString(m_request.get_user_language(), msgId);
+}
 
 std::unique_ptr<ContentResponse> ContentResponseBlueprint::generateResponseObject() const
 {
   auto r = ContentResponse::build(m_server, m_template, m_data, m_mimeType);
   r->set_code(m_httpStatusCode);
-  return m_taskbarInfo
-       ? withTaskbarInfo(m_taskbarInfo->bookName, m_taskbarInfo->archive, std::move(r))
-       : std::move(r);
+  if ( m_taskbarInfo ) {
+    r->set_taskbar(m_taskbarInfo->bookName, m_taskbarInfo->archive);
+  }
+  return r;
+}
+
+HTTPErrorHtmlResponse::HTTPErrorHtmlResponse(const InternalServer& server,
+                                             const RequestContext& request,
+                                             int httpStatusCode,
+                                             const std::string& pageTitleMsgId,
+                                             const std::string& headingMsgId,
+                                             const std::string& cssUrl)
+  : ContentResponseBlueprint(&server,
+                             &request,
+                             httpStatusCode,
+                             "text/html; charset=utf-8",
+                             RESOURCE::templates::error_html)
+{
+  kainjow::mustache::list emptyList;
+  this->m_data = kainjow::mustache::object{
+                    {"CSS_URL", onlyAsNonEmptyMustacheValue(cssUrl) },
+                    {"PAGE_TITLE",   getMessage(pageTitleMsgId)},
+                    {"PAGE_HEADING", getMessage(headingMsgId)},
+                    {"details", emptyList}
+  };
 }
 
 HTTP404HtmlResponse::HTTP404HtmlResponse(const InternalServer& server,
-                                         const RequestContext& request)
-  : ContentResponseBlueprint(&server,
-                             &request,
-                             MHD_HTTP_NOT_FOUND,
-                             "text/html",
-                             RESOURCE::templates::_404_html)
+                                             const RequestContext& request)
+  : HTTPErrorHtmlResponse(server,
+                          request,
+                          MHD_HTTP_NOT_FOUND,
+                          "404-page-title",
+                          "404-page-heading")
 {
-  kainjow::mustache::list emptyList;
-  this->m_data = kainjow::mustache::object{{"details", emptyList}};
 }
 
-HTTP404HtmlResponse& HTTP404HtmlResponse::operator+(UrlNotFoundMsg /*unused*/)
+HTTPErrorHtmlResponse& HTTP404HtmlResponse::operator+(UrlNotFoundMsg /*unused*/)
 {
   const std::string requestUrl = m_request.get_full_url();
-  kainjow::mustache::mustache msgTmpl(R"(The requested URL "{{url}}" was not found on this server.)");
-  return *this + msgTmpl.render({"url", requestUrl});
+  return *this + ParameterizedMessage("url-not-found", {{"url", requestUrl}});
 }
 
-HTTP404HtmlResponse& HTTP404HtmlResponse::operator+(const std::string& msg)
+HTTPErrorHtmlResponse& HTTPErrorHtmlResponse::operator+(const std::string& msg)
 {
   m_data["details"].push_back({"p", msg});
   return *this;
 }
 
-HTTP400HtmlResponse::HTTP400HtmlResponse(const InternalServer& server,
-                                         const RequestContext& request)
-  : ContentResponseBlueprint(&server,
-                             &request,
-                             MHD_HTTP_BAD_REQUEST,
-                             "text/html",
-                             RESOURCE::templates::_400_html)
+HTTPErrorHtmlResponse& HTTPErrorHtmlResponse::operator+(const ParameterizedMessage& details)
 {
-  kainjow::mustache::list emptyList;
-  this->m_data = kainjow::mustache::object{{"details", emptyList}};
+  return *this + details.getText(m_request.get_user_language());
 }
 
-HTTP400HtmlResponse& HTTP400HtmlResponse::operator+(InvalidUrlMsg /*unused*/)
+
+HTTP400HtmlResponse::HTTP400HtmlResponse(const InternalServer& server,
+                                         const RequestContext& request)
+  : HTTPErrorHtmlResponse(server,
+                          request,
+                          MHD_HTTP_BAD_REQUEST,
+                          "400-page-title",
+                          "400-page-heading")
+{
+}
+
+HTTPErrorHtmlResponse& HTTP400HtmlResponse::operator+(InvalidUrlMsg /*unused*/)
 {
   std::string requestUrl = m_request.get_full_url();
   const auto query = m_request.get_query();
@@ -169,12 +216,29 @@ HTTP400HtmlResponse& HTTP400HtmlResponse::operator+(InvalidUrlMsg /*unused*/)
   return *this + msgTmpl.render({"url", requestUrl});
 }
 
-HTTP400HtmlResponse& HTTP400HtmlResponse::operator+(const std::string& msg)
+HTTP500HtmlResponse::HTTP500HtmlResponse(const InternalServer& server,
+                                         const RequestContext& request)
+  : HTTPErrorHtmlResponse(server,
+                          request,
+                          MHD_HTTP_INTERNAL_SERVER_ERROR,
+                          "500-page-title",
+                          "500-page-heading")
 {
-  m_data["details"].push_back({"p", msg});
-  return *this;
+  // operator+() is a state-modifying operator (akin to operator+=)
+  *this + "An internal server error occured. We are sorry about that :/";
 }
 
+std::unique_ptr<ContentResponse> HTTP500HtmlResponse::generateResponseObject() const
+{
+  // We want a 500 response to be a minimalistic one (so that the server doesn't
+  // have to provide additional resources required for its proper rendering)
+  // ";raw=true" in the MIME-type below disables response decoration
+  // (see ContentResponse::contentDecorationAllowed())
+  const std::string mimeType = "text/html;charset=utf-8;raw=true";
+  auto r = ContentResponse::build(m_server, m_template, m_data, mimeType);
+  r->set_code(m_httpStatusCode);
+  return r;
+}
 
 ContentResponseBlueprint& ContentResponseBlueprint::operator+(const TaskbarInfo& taskbarInfo)
 {
@@ -192,26 +256,6 @@ std::unique_ptr<Response> Response::build_416(const InternalServer& server, size
   oss << "bytes */" << resourceLength;
   response->add_header(MHD_HTTP_HEADER_CONTENT_RANGE, oss.str());
 
-  return response;
-}
-
-std::unique_ptr<Response> Response::build_500(const InternalServer& server, const std::string& msg)
-{
-  MustacheData data;
-  data.set("error", msg);
-  auto content = render_template(RESOURCE::templates::_500_html, data);
-  std::unique_ptr<Response> response (
-      new ContentResponse(
-        server.m_root, //root
-        true, //verbose
-        true, //raw
-        false, //withTaskbar
-        false, //withLibraryButton
-        false, //blockExternalLinks
-        content, //content
-        "text/html" //mimetype
-  ));
-  response->set_code(MHD_HTTP_INTERNAL_SERVER_ERROR);
   return response;
 }
 
@@ -280,14 +324,20 @@ void print_response_info(int retCode, MHD_Response* response)
 }
 
 
-void ContentResponse::introduce_taskbar()
+void ContentResponse::introduce_taskbar(const std::string& lang)
 {
-  kainjow::mustache::data data;
-  data.set("root", m_root);
-  data.set("content", m_bookName);
-  data.set("hascontent", (!m_bookName.empty() && !m_bookTitle.empty()));
-  data.set("title", m_bookTitle);
-  data.set("withlibrarybutton", m_withLibraryButton);
+  i18n::GetTranslatedString t(lang);
+  kainjow::mustache::object data{
+    {"root", m_root},
+    {"content", m_bookName},
+    {"hascontent", (!m_bookName.empty() && !m_bookTitle.empty())},
+    {"title", m_bookTitle},
+    {"withlibrarybutton", m_withLibraryButton},
+    {"LIBRARY_BUTTON_TEXT", t("library-button-text")},
+    {"HOME_BUTTON_TEXT", t("home-button-text", {{"BOOK_TITLE", m_bookTitle}}) },
+    {"RANDOM_PAGE_BUTTON_TEXT", t("random-page-button-text") },
+    {"SEARCHBOX_TOOLTIP", t("searchbox-tooltip", {{"BOOK_TITLE", m_bookTitle}}) },
+  };
   auto head_content = render_template(RESOURCE::templates::head_taskbar_html, data);
   m_content = prependToFirstOccurence(
     m_content,
@@ -325,7 +375,7 @@ ContentResponse::can_compress(const RequestContext& request) const
 {
   return request.can_compress()
       && is_compressible_mime_type(m_mimeType)
-      && (m_content.size() > KIWIX_MIN_CONTENT_SIZE_TO_DEFLATE);
+      && (m_content.size() > KIWIX_MIN_CONTENT_SIZE_TO_COMPRESS);
 }
 
 bool
@@ -352,42 +402,24 @@ ContentResponse::create_mhd_response(const RequestContext& request)
     inject_root_link();
 
     if (m_withTaskbar) {
-      introduce_taskbar();
+      introduce_taskbar(request.get_user_language());
     }
     if (m_blockExternalLinks) {
       inject_externallinks_blocker();
     }
   }
 
-  bool shouldCompress = can_compress(request);
-  if (shouldCompress) {
-    std::vector<Bytef> compr_buffer(compressBound(m_content.size()));
-    uLongf comprLen = compr_buffer.capacity();
-    int err = compress(&compr_buffer[0],
-                       &comprLen,
-                       (const Bytef*)(m_content.data()),
-                       m_content.size());
-    if (err == Z_OK && comprLen > 2 && comprLen < (m_content.size() + 2)) {
-      /* /!\ Internet Explorer has a bug with deflate compression.
-         It can not handle the first two bytes (compression headers)
-         We need to chunk them off (move the content 2bytes)
-         It has no incidence on other browsers
-         See http://www.subbu.org/blog/2008/03/ie7-deflate-or-not and comments */
-      m_content = string((char*)&compr_buffer[2], comprLen - 2);
-      m_etag.set_option(ETag::COMPRESSED_CONTENT);
-    } else {
-      shouldCompress = false;
-    }
-  }
+  const bool isCompressed = can_compress(request) && compress(m_content);
 
   MHD_Response* response = MHD_create_response_from_buffer(
     m_content.size(), const_cast<char*>(m_content.data()), MHD_RESPMEM_MUST_COPY);
 
-  if (shouldCompress) {
+  if (isCompressed) {
+    m_etag.set_option(ETag::COMPRESSED_CONTENT);
     MHD_add_response_header(
         response, MHD_HTTP_HEADER_VARY, "Accept-Encoding");
     MHD_add_response_header(
-        response, MHD_HTTP_HEADER_CONTENT_ENCODING, "deflate");
+        response, MHD_HTTP_HEADER_CONTENT_ENCODING, "gzip");
   }
   return response;
 }
@@ -465,15 +497,6 @@ std::unique_ptr<ContentResponse> ContentResponse::build(
 {
   auto content = render_template(template_str, data);
   return ContentResponse::build(server, content, mimetype, isHomePage);
-}
-
-std::unique_ptr<ContentResponse> withTaskbarInfo(
-  const std::string& bookName,
-  const zim::Archive* archive,
-  std::unique_ptr<ContentResponse> r)
-{
-  r->set_taskbar(bookName, archive);
-  return r;
 }
 
 ItemResponse::ItemResponse(bool verbose, const zim::Item& item, const std::string& mimetype, const ByteRange& byterange) :

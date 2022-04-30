@@ -55,6 +55,7 @@ extern "C" {
 #include "searcher.h"
 #include "search_renderer.h"
 #include "opds_dumper.h"
+#include "i18n.h"
 
 #include <zim/uuid.h>
 #include <zim/error.h>
@@ -77,7 +78,6 @@ extern "C" {
 #include "response.h"
 
 #define MAX_SEARCH_LEN 140
-#define KIWIX_MIN_CONTENT_SIZE_TO_DEFLATE 100
 #define DEFAULT_CACHE_SIZE 2
 
 namespace kiwix {
@@ -359,10 +359,12 @@ std::unique_ptr<Response> InternalServer::handle_request(const RequestContext& r
     return handle_content(request);
   } catch (std::exception& e) {
     fprintf(stderr, "===== Unhandled error : %s\n", e.what());
-    return Response::build_500(*this, e.what());
+    return HTTP500HtmlResponse(*this, request)
+         + e.what();
   } catch (...) {
     fprintf(stderr, "===== Unhandled unknown error\n");
-    return Response::build_500(*this, "Unknown error");
+    return HTTP500HtmlResponse(*this, request)
+         + "Unknown error";
   }
 }
 
@@ -440,9 +442,39 @@ SuggestionsList_t getSuggestions(SuggestionSearcherCache& cache, const zim::Arch
 namespace
 {
 
-std::string noSuchBookErrorMsg(const std::string& bookName)
+std::string makeFulltextSearchSuggestion(const std::string& lang, const std::string& queryString)
 {
-  return "No such book: " + bookName;
+  return i18n::expandParameterizedString(lang, "suggest-full-text-search",
+               {
+                  {"SEARCH_TERMS", queryString}
+               }
+         );
+}
+
+ParameterizedMessage noSuchBookErrorMsg(const std::string& bookName)
+{
+  return ParameterizedMessage("no-such-book", { {"BOOK_NAME", bookName} });
+}
+
+ParameterizedMessage invalidRawAccessMsg(const std::string& dt)
+{
+  return ParameterizedMessage("invalid-raw-data-type", { {"DATATYPE", dt} });
+}
+
+ParameterizedMessage rawEntryNotFoundMsg(const std::string& dt, const std::string& entry)
+{
+  return ParameterizedMessage("raw-entry-not-found",
+                              {
+                                {"DATATYPE", dt},
+                                {"ENTRY", entry},
+                              }
+  );
+}
+
+ParameterizedMessage nonParameterizedMessage(const std::string& msgId)
+{
+  const ParameterizedMessage::Parameters noParams;
+  return ParameterizedMessage(msgId, noParams);
 }
 
 } // unnamed namespace
@@ -507,7 +539,8 @@ std::unique_ptr<Response> InternalServer::handle_suggest(const RequestContext& r
   /* Propose the fulltext search if possible */
   if (archive->hasFulltextIndex()) {
     MustacheData result;
-    result.set("label", "containing '" + queryString + "'...");
+    const auto lang = request.get_user_language();
+    result.set("label", makeFulltextSearchSuggestion(lang, queryString));
     result.set("value", queryString + " ");
     result.set("kind", "pattern");
     result.set("first", first);
@@ -589,11 +622,12 @@ std::unique_ptr<Response> InternalServer::handle_search(const RequestContext& re
     } catch(std::runtime_error& e) {
       // Searcher->search will throw a runtime error if there is no valid xapian database to do the search.
       // (in case of zim file not containing a index)
-      auto data = get_default_data();
-      data.set("pattern", encodeDiples(searchInfo.pattern));
-      auto response = ContentResponse::build(*this, RESOURCE::templates::no_search_result_html, data, "text/html; charset=utf-8");
-      response->set_code(MHD_HTTP_NOT_FOUND);
-      return withTaskbarInfo(searchInfo.bookName, archive.get(), std::move(response));
+      return HTTPErrorHtmlResponse(*this, request, MHD_HTTP_NOT_FOUND,
+                                   "fulltext-search-unavailable",
+                                   "404-page-heading",
+                                   m_root + "/skin/search_results.css")
+           + nonParameterizedMessage("no-search-results")
+           + TaskbarInfo(searchInfo.bookName, archive.get());
     }
 
 
@@ -622,14 +656,16 @@ std::unique_ptr<Response> InternalServer::handle_search(const RequestContext& re
     renderer.setSearchProtocolPrefix(m_root + "/search?");
     renderer.setPageLength(pageLength);
     auto response = ContentResponse::build(*this, renderer.getHtml(), "text/html; charset=utf-8");
-    return withTaskbarInfo(searchInfo.bookName, archive.get(), std::move(response));
+    response->set_taskbar(searchInfo.bookName, archive.get());
+    return std::move(response);
   } catch (const std::invalid_argument& e) {
     return HTTP400HtmlResponse(*this, request)
       + invalidUrlMsg
       + std::string(e.what());
   } catch (const std::exception& e) {
     std::cerr << e.what() << std::endl;
-    return Response::build_500(*this, e.what());
+    return HTTP500HtmlResponse(*this, request)
+         + e.what();
   }
 }
 
@@ -659,9 +695,9 @@ std::unique_ptr<Response> InternalServer::handle_random(const RequestContext& re
     auto entry = archive->getRandomEntry();
     return build_redirect(bookName, getFinalItem(*archive, entry));
   } catch(zim::EntryNotFound& e) {
-    const std::string error_details = "Oops! Failed to pick a random article :(";
-    auto response = Response::build_404(*this, "", error_details);
-    return withTaskbarInfo(bookName, archive.get(), std::move(response));
+    return HTTP404HtmlResponse(*this, request)
+           + nonParameterizedMessage("random-article-failure")
+           + TaskbarInfo(bookName, archive.get());
   }
 }
 
@@ -801,13 +837,13 @@ std::string get_book_name(const RequestContext& request)
   }
 }
 
-std::string searchSuggestionHTML(const std::string& searchURL, const std::string& pattern)
+ParameterizedMessage suggestSearchMsg(const std::string& searchURL, const std::string& pattern)
 {
-  kainjow::mustache::mustache tmpl("Make a full text search for <a href=\"{{{searchURL}}}\">{{pattern}}</a>");
-  MustacheData data;
-  data.set("pattern", pattern);
-  data.set("searchURL", searchURL);
-  return (tmpl.render(data));
+  return ParameterizedMessage("suggest-search",
+                              {
+                                { "PATTERN",    pattern   },
+                                { "SEARCH_URL", searchURL }
+                              });
 }
 
 } // unnamed namespace
@@ -838,11 +874,11 @@ std::unique_ptr<Response> InternalServer::handle_content(const RequestContext& r
   } catch (const std::out_of_range& e) {}
 
   if (archive == nullptr) {
-    std::string searchURL = m_root + "/search?pattern=" + kiwix::urlEncode(pattern, true); // Make a full search on the entire library.
-    const std::string details = searchSuggestionHTML(searchURL, kiwix::urlDecode(pattern));
-
-    auto response = Response::build_404(*this, request.get_full_url(), details);
-    return withTaskbarInfo(bookName, nullptr, std::move(response));
+    const std::string searchURL = m_root + "/search?pattern=" + kiwix::urlEncode(pattern, true);
+    return HTTP404HtmlResponse(*this, request)
+           + urlNotFoundMsg
+           + suggestSearchMsg(searchURL, kiwix::urlDecode(pattern))
+           + TaskbarInfo(bookName);
   }
 
   auto urlStr = request.get_url().substr(bookName.size()+1);
@@ -872,11 +908,11 @@ std::unique_ptr<Response> InternalServer::handle_content(const RequestContext& r
     if (m_verbose.load())
       printf("Failed to find %s\n", urlStr.c_str());
 
-    std::string searchURL = m_root + "/search?content=" + bookName + "&pattern=" + kiwix::urlEncode(pattern, true); // Make a search on this specific book only.
-    const std::string details = searchSuggestionHTML(searchURL, kiwix::urlDecode(pattern));
-
-    auto response = Response::build_404(*this, request.get_full_url(), details);
-    return withTaskbarInfo(bookName, archive.get(), std::move(response));
+    std::string searchURL = m_root + "/search?content=" + bookName + "&pattern=" + kiwix::urlEncode(pattern, true);
+    return HTTP404HtmlResponse(*this, request)
+           + urlNotFoundMsg
+           + suggestSearchMsg(searchURL, kiwix::urlDecode(pattern))
+           + TaskbarInfo(bookName, archive.get());
   }
 }
 
@@ -898,8 +934,9 @@ std::unique_ptr<Response> InternalServer::handle_raw(const RequestContext& reque
   }
 
   if (kind != "meta" && kind!= "content") {
-    const std::string error_details = kind + " is not a valid request for raw content.";
-    return Response::build_404(*this, request.get_full_url(), error_details);
+    return HTTP404HtmlResponse(*this, request)
+           + urlNotFoundMsg
+           + invalidRawAccessMsg(kind);
   }
 
   std::shared_ptr<zim::Archive> archive;
@@ -935,8 +972,9 @@ std::unique_ptr<Response> InternalServer::handle_raw(const RequestContext& reque
     if (m_verbose.load()) {
       printf("Failed to find %s\n", itemPath.c_str());
     }
-    const std::string error_details = "Cannot find " + kind + " entry " + itemPath;
-    return Response::build_404(*this, request.get_full_url(), error_details);
+    return HTTP404HtmlResponse(*this, request)
+           + urlNotFoundMsg
+           + rawEntryNotFoundMsg(kind, itemPath);
   }
 }
 

@@ -1,4 +1,5 @@
 
+#define CPPHTTPLIB_ZLIB_SUPPORT 1
 #include "./httplib.h"
 #include "gtest/gtest.h"
 
@@ -56,7 +57,6 @@ std::string removeEOLWhitespaceMarkers(const std::string& s)
   const std::regex pattern("//EOLWHITESPACEMARKER");
   return std::regex_replace(s, pattern, "");
 }
-
 
 class ZimFileServer
 {
@@ -142,6 +142,7 @@ protected:
   const int PORT = 8001;
   const ZimFileServer::FilePathCollection ZIMFILES {
     "./test/zimfile.zim",
+    "./test/poor.zim",
     "./test/corner_cases.zim"
   };
 
@@ -184,13 +185,10 @@ const ResourceCollection resources200Compressible{
   { WITH_ETAG, "/ROOT/skin/taskbar.css" },
   { WITH_ETAG, "/ROOT/skin/block_external.js" },
 
-  { NO_ETAG,   "/ROOT/catalog/root.xml" },
-  { NO_ETAG,   "/ROOT/catalog/searchdescription.xml" },
   { NO_ETAG,   "/ROOT/catalog/search" },
 
   { NO_ETAG,   "/ROOT/search?content=zimfile&pattern=a" },
 
-  { NO_ETAG,   "/ROOT/suggest?content=zimfile" },
   { NO_ETAG,   "/ROOT/suggest?content=zimfile&term=ray" },
 
   { NO_ETAG,   "/ROOT/catch/external?source=www.example.com" },
@@ -223,7 +221,10 @@ const ResourceCollection resources200Uncompressible{
   { WITH_ETAG, "/ROOT/corner_cases/-/empty.css" },
   { WITH_ETAG, "/ROOT/corner_cases/-/empty.js" },
 
-  // The title and creator are too small to be compressed
+  // The following url's responses are too small to be compressed
+  { NO_ETAG,   "/ROOT/catalog/root.xml" },
+  { NO_ETAG,   "/ROOT/catalog/searchdescription.xml" },
+  { NO_ETAG,   "/ROOT/suggest?content=zimfile" },
   { WITH_ETAG, "/ROOT/raw/zimfile/meta/Creator" },
   { WITH_ETAG, "/ROOT/raw/zimfile/meta/Title" },
 };
@@ -271,9 +272,9 @@ TEST_F(ServerTest, 200)
 TEST_F(ServerTest, CompressibleContentIsCompressedIfAcceptable)
 {
   for ( const Resource& res : resources200Compressible ) {
-    const auto x = zfs1_->GET(res.url, { {"Accept-Encoding", "deflate"} });
+    const auto x = zfs1_->GET(res.url, { {"Accept-Encoding", "gzip"} });
     EXPECT_EQ(200, x->status) << res;
-    EXPECT_EQ("deflate", x->get_header_value("Content-Encoding")) << res;
+    EXPECT_EQ("gzip", x->get_header_value("Content-Encoding")) << res;
     EXPECT_EQ("Accept-Encoding", x->get_header_value("Vary")) << res;
   }
 }
@@ -281,7 +282,7 @@ TEST_F(ServerTest, CompressibleContentIsCompressedIfAcceptable)
 TEST_F(ServerTest, UncompressibleContentIsNotCompressed)
 {
   for ( const Resource& res : resources200Uncompressible ) {
-    const auto x = zfs1_->GET(res.url, { {"Accept-Encoding", "deflate"} });
+    const auto x = zfs1_->GET(res.url, { {"Accept-Encoding", "gzip"} });
     EXPECT_EQ(200, x->status) << res;
     EXPECT_EQ("", x->get_header_value("Content-Encoding")) << res;
   }
@@ -410,11 +411,13 @@ public:
   std::string expectedResponse() const;
 
 private:
+  bool isTranslatedVersion() const;
   virtual std::string pageTitle() const;
   std::string pageCssLink() const;
   std::string hiddenBookNameInput() const;
   std::string searchPatternInput() const;
   std::string taskbarLinks() const;
+  std::string goToWelcomePageText() const;
 };
 
 std::string TestContentIn404HtmlResponse::expectedResponse() const
@@ -429,7 +432,8 @@ std::string TestContentIn404HtmlResponse::expectedResponse() const
     R"FRAG(</title>
 )FRAG",
 
-    R"FRAG(  <link type="root" href="/ROOT"><link type="text/css" href="/ROOT/skin/jquery-ui/jquery-ui.min.css" rel="Stylesheet" />
+    R"FRAG(
+  <link type="root" href="/ROOT"><link type="text/css" href="/ROOT/skin/jquery-ui/jquery-ui.min.css" rel="Stylesheet" />
 <link type="text/css" href="/ROOT/skin/jquery-ui/jquery-ui.theme.min.css" rel="Stylesheet" />
 <link type="text/css" href="/ROOT/skin/taskbar.css" rel="Stylesheet" />
 <script type="text/javascript" src="/ROOT/skin/jquery-ui/external/jquery/jquery.js" defer></script>
@@ -452,7 +456,11 @@ std::string TestContentIn404HtmlResponse::expectedResponse() const
         <input type="checkbox" id="kiwix_button_show_toggle">
         <label for="kiwix_button_show_toggle"><img src="/ROOT/skin/caret.png" alt=""></label>
         <div class="kiwix_button_cont">
-            <a id="kiwix_serve_taskbar_library_button" title="Go to welcome page" aria-label="Go to welcome page" href="/ROOT/"><button>&#x1f3e0;</button></a>
+            <a id="kiwix_serve_taskbar_library_button" title=")FRAG",
+
+  R"FRAG(" aria-label=")FRAG",
+
+  R"FRAG(" href="/ROOT/"><button>&#x1f3e0;</button></a>
           )FRAG",
 
   R"FRAG(
@@ -476,10 +484,14 @@ std::string TestContentIn404HtmlResponse::expectedResponse() const
        + frag[3]
        + searchPatternInput()
        + frag[4]
-       + taskbarLinks()
+       + goToWelcomePageText()
        + frag[5]
-       + removeEOLWhitespaceMarkers(expectedBody)
-       + frag[6];
+       + goToWelcomePageText()
+       + frag[6]
+       + taskbarLinks()
+       + frag[7]
+       + expectedBody
+       + frag[8];
 }
 
 std::string TestContentIn404HtmlResponse::pageTitle() const
@@ -496,8 +508,7 @@ std::string TestContentIn404HtmlResponse::pageCssLink() const
 
   return R"(    <link type="text/css" href=")"
        + expectedCssUrl
-       + R"(" rel="Stylesheet" />
-)";
+       + R"(" rel="Stylesheet" />)";
 }
 
 std::string TestContentIn404HtmlResponse::hiddenBookNameInput() const
@@ -509,11 +520,15 @@ std::string TestContentIn404HtmlResponse::hiddenBookNameInput() const
 
 std::string TestContentIn404HtmlResponse::searchPatternInput() const
 {
-  return R"(          <input autocomplete="off" class="ui-autocomplete-input" id="kiwixsearchbox" name="pattern" type="text" title="Search ')"
-       + bookTitle
-       + R"('" aria-label="Search ')"
-       + bookTitle
-       + R"('">
+  const std::string searchboxTooltip = isTranslatedVersion()
+                                     ? "Որոնել '" + bookTitle + "'֊ում"
+                                     : "Search '" + bookTitle + "'";
+
+  return R"(          <input autocomplete="off" class="ui-autocomplete-input" id="kiwixsearchbox" name="pattern" type="text" title=")"
+       + searchboxTooltip
+       + R"(" aria-label=")"
+       + searchboxTooltip
+       + R"(">
 )";
 }
 
@@ -522,20 +537,45 @@ std::string TestContentIn404HtmlResponse::taskbarLinks() const
   if ( bookName.empty() )
     return "";
 
-  return R"(<a id="kiwix_serve_taskbar_home_button" title="Go to the main page of ')"
-       + bookTitle
-       + R"('" aria-label="Go to the main page of ')"
-       + bookTitle
-       + R"('" href="/ROOT/)"
+  const auto goToMainPageOfBook = isTranslatedVersion()
+                                ? "Դեպի '" + bookTitle + "'֊ի գլխավոր էջը"
+                                : "Go to the main page of '" + bookTitle + "'";
+
+  const std::string goToRandomPage = isTranslatedVersion()
+                                   ? "Բացել պատահական էջ"
+                                   : "Go to a randomly selected page";
+
+  return R"(<a id="kiwix_serve_taskbar_home_button" title=")"
+       + goToMainPageOfBook
+       + R"(" aria-label=")"
+       + goToMainPageOfBook
+       + R"(" href="/ROOT/)"
        + bookName
        + R"(/"><button>)"
        + bookTitle
        + R"(</button></a>
-          <a id="kiwix_serve_taskbar_random_button" title="Go to a randomly selected page" aria-label="Go to a randomly selected page"
+          <a id="kiwix_serve_taskbar_random_button" title=")"
+       + goToRandomPage
+       + R"(" aria-label=")"
+       + goToRandomPage
+       + R"("
             href="/ROOT/random?content=)"
        + bookName
        + R"("><button>&#x1F3B2;</button></a>)";
 }
+
+bool TestContentIn404HtmlResponse::isTranslatedVersion() const
+{
+  return url.find("userlang=hy") != std::string::npos;
+}
+
+std::string TestContentIn404HtmlResponse::goToWelcomePageText() const
+{
+  return isTranslatedVersion()
+       ? "Գրադարանի էջ"
+       : "Go to welcome page";
+}
+
 
 class TestContentIn400HtmlResponse : public TestContentIn404HtmlResponse
 {
@@ -555,7 +595,6 @@ std::string TestContentIn400HtmlResponse::pageTitle() const {
      : expectedPageTitle;
 }
 
-
 } // namespace TestingOfHtmlResponses
 
 TEST_F(ServerTest, 404WithBodyTesting)
@@ -567,6 +606,15 @@ TEST_F(ServerTest, 404WithBodyTesting)
     <h1>Not Found</h1>
     <p>
       No such book: non-existent-book
+    </p>
+)"  },
+
+    { /* url */ "/ROOT/random?content=non-existent-book&userlang=hy",
+      expected_page_title=="Սխալ հասցե" &&
+      expected_body==R"(
+    <h1>Սխալ հասցե</h1>
+    <p>
+      Գիրքը բացակայում է՝ non-existent-book
     </p>
 )"  },
 
@@ -586,11 +634,29 @@ TEST_F(ServerTest, 404WithBodyTesting)
     </p>
 )"  },
 
+    { /* url */ "/ROOT/catalog/?userlang=hy",
+      expected_page_title=="Սխալ հասցե" &&
+      expected_body==R"(
+    <h1>Սխալ հասցե</h1>
+    <p>
+      Սխալ հասցե՝ /ROOT/catalog/
+    </p>
+)"  },
+
     { /* url */ "/ROOT/catalog/invalid_endpoint",
       expected_body==R"(
     <h1>Not Found</h1>
     <p>
       The requested URL "/ROOT/catalog/invalid_endpoint" was not found on this server.
+    </p>
+)"  },
+
+    { /* url */ "/ROOT/catalog/invalid_endpoint?userlang=hy",
+      expected_page_title=="Սխալ հասցե" &&
+      expected_body==R"(
+    <h1>Սխալ հասցե</h1>
+    <p>
+      Սխալ հասցե՝ /ROOT/catalog/invalid_endpoint
     </p>
 )"  },
 
@@ -642,6 +708,20 @@ TEST_F(ServerTest, 404WithBodyTesting)
     </p>
 )"  },
 
+    { /* url */ "/ROOT/zimfile/invalid-article?userlang=hy",
+      expected_page_title=="Սխալ հասցե" &&
+      book_name=="zimfile" &&
+      book_title=="Ray Charles" &&
+      expected_body==R"(
+    <h1>Սխալ հասցե</h1>
+    <p>
+      Սխալ հասցե՝ /ROOT/zimfile/invalid-article
+    </p>
+    <p>
+      Որոնել <a href="/ROOT/search?content=zimfile&pattern=invalid-article">invalid-article</a>
+    </p>
+)"  },
+
     { /* url */ "/ROOT/raw/no-such-book/meta/Title",
       expected_body==R"(
     <h1>Not Found</h1>
@@ -683,6 +763,18 @@ TEST_F(ServerTest, 404WithBodyTesting)
     </p>
     <p>
       Cannot find content entry invalid-article
+    </p>
+)"  },
+
+    { /* url */ "/ROOT/search?content=poor&pattern=whatever",
+      expected_page_title=="Fulltext search unavailable" &&
+      expected_css_url=="/ROOT/skin/search_results.css" &&
+      book_name=="poor" &&
+      book_title=="poor" &&
+      expected_body==R"(
+    <h1>Not Found</h1>
+    <p>
+      The fulltext search engine is not available for this content.
     </p>
 )"  },
   };
@@ -758,6 +850,105 @@ TEST_F(ServerTest, 400WithBodyTesting)
     const auto r = zfs1_->GET(t.url.c_str());
     EXPECT_EQ(r->status, 400) << ctx;
     EXPECT_EQ(r->body, t.expectedResponse()) << ctx;
+  }
+}
+
+TEST_F(ServerTest, 500)
+{
+  const std::string expectedBody = R"(<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta content="text/html;charset=UTF-8" http-equiv="content-type" />
+    <title>Internal Server Error</title>
+
+  </head>
+  <body>
+    <h1>Internal Server Error</h1>
+    <p>
+      An internal server error occured. We are sorry about that :/
+    </p>
+    <p>
+      Entry redirect_loop.html is a redirect entry.
+    </p>
+  </body>
+</html>
+)";
+
+  const auto r = zfs1_->GET("/ROOT/poor/A/redirect_loop.html");
+  EXPECT_EQ(r->status, 500);
+  EXPECT_EQ(r->body, expectedBody);
+}
+
+TEST_F(ServerTest, UserLanguageControl)
+{
+  struct TestData
+  {
+    const std::string url;
+    const std::string acceptLanguageHeader;
+    const std::string expectedH1;
+
+    operator TestContext() const
+    {
+      return TestContext{
+          {"url", url},
+          {"acceptLanguageHeader", acceptLanguageHeader},
+      };
+    }
+  };
+
+  const TestData testData[] = {
+    {
+      /*url*/ "/ROOT/zimfile/invalid-article",
+      /*Accept-Language:*/ "",
+      /* expected <h1> */ "Not Found"
+    },
+    {
+      /*url*/ "/ROOT/zimfile/invalid-article?userlang=en",
+      /*Accept-Language:*/ "",
+      /* expected <h1> */ "Not Found"
+    },
+    {
+      /*url*/ "/ROOT/zimfile/invalid-article?userlang=hy",
+      /*Accept-Language:*/ "",
+      /* expected <h1> */ "Սխալ հասցե"
+    },
+    {
+      /*url*/ "/ROOT/zimfile/invalid-article",
+      /*Accept-Language:*/ "*",
+      /* expected <h1> */ "Not Found"
+    },
+    {
+      /*url*/ "/ROOT/zimfile/invalid-article",
+      /*Accept-Language:*/ "hy",
+      /* expected <h1> */ "Սխալ հասցե"
+    },
+    {
+      // userlang query parameter takes precedence over Accept-Language
+      /*url*/ "/ROOT/zimfile/invalid-article?userlang=en",
+      /*Accept-Language:*/ "hy",
+      /* expected <h1> */ "Not Found"
+    },
+    {
+      // The value of the Accept-Language header is not currently parsed.
+      // In case of a comma separated list of languages (optionally weighted
+      // with quality values) the default (en) language is used instead.
+      /*url*/ "/ROOT/zimfile/invalid-article",
+      /*Accept-Language:*/ "hy;q=0.9, en;q=0.2",
+      /* expected <h1> */ "Not Found"
+    },
+  };
+
+  const std::regex h1Regex("<h1>(.+)</h1>");
+  for ( const auto& t : testData ) {
+    std::smatch h1Match;
+    Headers headers;
+    if ( !t.acceptLanguageHeader.empty() ) {
+      headers.insert({"Accept-Language", t.acceptLanguageHeader});
+    }
+    const auto r = zfs1_->GET(t.url.c_str(), headers);
+    std::regex_search(r->body, h1Match, h1Regex);
+    const std::string h1(h1Match[1]);
+    EXPECT_EQ(h1, t.expectedH1) << t;
   }
 }
 
@@ -872,7 +1063,7 @@ TEST_F(ServerTest, CompressionInfluencesETag)
     if ( ! res.etag_expected ) continue;
     const auto g1 = zfs1_->GET(res.url);
     const auto g2 = zfs1_->GET(res.url, { {"Accept-Encoding", ""} } );
-    const auto g3 = zfs1_->GET(res.url, { {"Accept-Encoding", "deflate"} } );
+    const auto g3 = zfs1_->GET(res.url, { {"Accept-Encoding", "gzip"} } );
     const auto etag = g1->get_header_value("ETag");
     EXPECT_EQ(etag, g2->get_header_value("ETag"));
     EXPECT_NE(etag, g3->get_header_value("ETag"));
@@ -885,7 +1076,7 @@ TEST_F(ServerTest, ETagOfUncompressibleContentIsNotAffectedByAcceptEncoding)
     if ( ! res.etag_expected ) continue;
     const auto g1 = zfs1_->GET(res.url);
     const auto g2 = zfs1_->GET(res.url, { {"Accept-Encoding", ""} } );
-    const auto g3 = zfs1_->GET(res.url, { {"Accept-Encoding", "deflate"} } );
+    const auto g3 = zfs1_->GET(res.url, { {"Accept-Encoding", "gzip"} } );
     const auto etag = g1->get_header_value("ETag");
     EXPECT_EQ(etag, g2->get_header_value("ETag")) << res;
     EXPECT_EQ(etag, g3->get_header_value("ETag")) << res;
@@ -924,7 +1115,7 @@ std::string make_etag_list(const std::string& etag)
 
 TEST_F(ServerTest, IfNoneMatchRequestsWithMatchingETagResultIn304Responses)
 {
-  const char* const encodings[] = { "", "deflate" };
+  const char* const encodings[] = { "", "gzip" };
   for ( const Resource& res : all200Resources() ) {
     for ( const char* enc: encodings ) {
       if ( ! res.etag_expected ) continue;
@@ -1055,7 +1246,7 @@ TEST_F(ServerTest, RangeHasPrecedenceOverCompression)
 
   const Headers onlyRange{ {"Range", "bytes=123-456"} };
   Headers rangeAndCompression(onlyRange);
-  rangeAndCompression.insert({"Accept-Encoding", "deflate"});
+  rangeAndCompression.insert({"Accept-Encoding", "gzip"});
 
   const auto p1 = zfs1_->GET(url, onlyRange);
   const auto p2 = zfs1_->GET(url, rangeAndCompression);
@@ -1139,6 +1330,17 @@ R"EXPECTEDRESPONSE([
   {
     "value" : "A&amp;B ",
     "label" : "containing &apos;A&amp;B&apos;...",
+    "kind" : "pattern"
+    //EOLWHITESPACEMARKER
+  }
+]
+)EXPECTEDRESPONSE"
+    },
+    { /* url: */ "/ROOT/suggest?content=zimfile&term=abracadabra&userlang=hy",
+R"EXPECTEDRESPONSE([
+  {
+    "value" : "abracadabra ",
+    "label" : "որոնել &apos;abracadabra&apos;...",
     "kind" : "pattern"
     //EOLWHITESPACEMARKER
   }
